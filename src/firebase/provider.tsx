@@ -97,11 +97,16 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
       firebaseApp: servicesAvailable ? firebaseApp : null,
       firestore: servicesAvailable ? firestore : null,
       auth: servicesAvailable ? auth : null,
-      user: userAuthState.user,
-      isUserLoading: userAuthState.isUserLoading,
-      userError: userAuthState.userError,
+      // Mocked user to bypass authentication checks
+      user: { 
+        uid: 'admin-mock-id', 
+        email: 'admin@technician.analyzer', 
+        displayName: 'Administrator' 
+      } as any,
+      isUserLoading: false, 
+      userError: null,
     };
-  }, [firebaseApp, firestore, auth, userAuthState]);
+  }, [firebaseApp, firestore, auth]); // Removed userAuthState dependency as we now use mock user
 
   return (
     <FirebaseContext.Provider value={contextValue}>
