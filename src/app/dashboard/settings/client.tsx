@@ -244,7 +244,7 @@ export function SettingsClient() {
                                                 <SelectValue placeholder="Select column" />
                                             </SelectTrigger>
                                             <SelectContent>
-                                                {headers.length > 0 ? headers.map(h => <SelectItem key={h} value={h}>{h}</SelectItem>) : 
+                                                {headers.length > 0 ? headers.filter(h => h && h.trim() !== "").map(h => <SelectItem key={h} value={h}>{h}</SelectItem>) : 
                                                 (columns[field.key] && columns[field.key] !== "" ? <SelectItem value={columns[field.key]}>{columns[field.key]}</SelectItem> : null)}
                                             </SelectContent>
                                         </Select>
