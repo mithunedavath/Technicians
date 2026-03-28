@@ -1,0 +1,180 @@
+
+{
+  "entities": {
+    "Technician": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Technician",
+      "type": "object",
+      "description": "Represents a technician who submits reports.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Technician entity."
+        },
+        "name": {
+          "type": "string",
+          "description": "The technician's full name."
+        },
+        "email": {
+          "type": "string",
+          "description": "The technician's email address.",
+          "format": "email"
+        },
+        "phoneNumber": {
+          "type": "string",
+          "description": "The technician's phone number."
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "Vendor": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Vendor",
+      "type": "object",
+      "description": "Represents a service center / vendor entry.",
+      "properties": {
+        "id": { "type": "string" },
+        "companyName": { "type": "string" },
+        "vendorType": { 
+          "type": "string",
+          "enum": ["ASP", "CALL BASIS TECHNICIAN", "OFFROLL TECHNICIAN"],
+          "description": "The category of vendor/service provider."
+        },
+        "joiningDate": { "type": "string", "format": "date" },
+        "status": { "type": "string" },
+        "associatedBrands": { "type": "string" },
+        "availableTechnicians": { "type": "string" },
+        "availableCoordinators": { "type": "string" },
+        "ownerName": { "type": "string" },
+        "ownersFatherName": { "type": "string" },
+        "contactNumber": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "state": { "type": "string" },
+        "city": { "type": "string" },
+        "gstNumber": { "type": "string" },
+        "panNumber": { "type": "string" },
+        "aadharNumber": { "type": "string" },
+        "establishmentAddress": { "type": "string" },
+        "ownerPersonalAddress": { "type": "string" },
+        "bankAccountNumber": { "type": "string" },
+        "bankName": { "type": "string" },
+        "branchName": { "type": "string" },
+        "ifscCode": { "type": "string" },
+        "bankAddress": { "type": "string" },
+        "rateLC": { "type": "string" },
+        "incentiveMSL": { "type": "string" },
+        "tatPenalty": { "type": "string" },
+        "customerCode": { "type": "string" },
+        "vendorCode": { "type": "string" },
+        "documentLink": { "type": "string" },
+        "agreementLink": { "type": "string" },
+        "billingAddress": { "type": "string", "description": "Address of the company this vendor bills to." },
+        "billingGstin": { "type": "string", "description": "GSTIN of the company this vendor bills to." },
+        "billingGstType": { "type": "string", "enum": ["IGST", "SGST+CGST", "NON GST"] }
+      }
+    },
+    "Report": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "Report",
+      "type": "object",
+      "description": "Represents a report submitted by a technician.",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the Report entity."
+        },
+        "technicianId": {
+          "type": "string",
+          "description": "Reference to Technician. (Relationship: Technician 1:N Report)"
+        },
+        "date": {
+          "type": "string",
+          "description": "The date the report was submitted.",
+          "format": "date-time"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the report."
+        },
+        "totalExpenses": {
+          "type": "number",
+          "description": "The total amount of expense."
+        },
+        "distanceTravelled": {
+          "type": "number",
+          "description": "Distance travelled by the technician."
+        },
+        "startLocation": {
+          "type": "string",
+          "description": "Starting location of the report"
+        },
+        "endLocation": {
+          "type": "string",
+          "description": "Ending location of the report"
+        }
+      },
+      "required": [
+        "id",
+        "technicianId",
+        "date",
+        "description",
+        "totalExpenses",
+        "distanceTravelled"
+      ]
+    },
+    "AppSettings": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "title": "AppSettings",
+      "type": "object",
+      "description": "Global application settings for Google Sheet URL and column mapping.",
+      "properties": {
+        "googleSheetUrl": { "type": "string" },
+        "masterGid": { "type": "string" },
+        "columnConfig": { "type": "object" }
+      }
+    }
+  },
+  "auth": {
+    "providers": [
+      "password",
+      "anonymous"
+    ]
+  },
+  "firestore": {
+    "structure": [
+      {
+        "path": "/technicians/{technicianId}",
+        "definition": {
+          "entityName": "Technician",
+          "schema": {
+            "$ref": "#/backend/entities/Technician"
+          },
+          "description": "Stores technician profiles."
+        }
+      },
+      {
+        "path": "/vendors/{vendorId}",
+        "definition": {
+          "entityName": "Vendor",
+          "schema": {
+            "$ref": "#/backend/entities/Vendor"
+          },
+          "description": "Stores vendor / service center details."
+        }
+      },
+      {
+        "path": "/settings/config",
+        "definition": {
+          "entityName": "AppSettings",
+          "schema": {
+            "$ref": "#/backend/entities/AppSettings"
+          },
+          "description": "Global configuration for the application."
+        }
+      }
+    ]
+  }
+}

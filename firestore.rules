@@ -1,0 +1,48 @@
+
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ------------------------------------------------------------------------
+    // Helper Functions
+    // ------------------------------------------------------------------------
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // ------------------------------------------------------------------------
+    // Collection Rules
+    // ------------------------------------------------------------------------
+
+    /**
+     * @description Global settings are publicly accessible because login is disabled.
+     */
+    match /settings/config {
+      allow read, write: if true;
+    }
+
+    /**
+     * @description Vendors are publicly accessible.
+     */
+    match /vendors/{vendorId} {
+      allow read, write: if true;
+    }
+
+    /**
+     * @description Technicians and their related data.
+     * Publicly accessible as per requirement "login authentication not required".
+     */
+    match /technicians/{technicianId} {
+      allow read, write: if true;
+      
+      match /reports/{reportId} {
+        allow read, write: if true;
+        
+        match /expenses/{expenseId} {
+          allow read, write: if true;
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,23 @@
+node_modules
+.next
+.git
+.gitignore
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+README.md
+Dockerfile
+docker-compose.yml
+.idx
+.modified
+docs
+apphosting.yaml
+components.json
+firestore.rules
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+# Keep package.json, package-lock.json, next.config.ts, tsconfig.json etc. since they are needed for the build.
