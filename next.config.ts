@@ -1,17 +1,12 @@
 import type {NextConfig} from 'next';
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: 'standalone',
   experimental: {
     serverActions: {
       bodySizeLimit: '100mb',
     },
   },
-  // This is to allow the Next.js dev server to accept requests from the
-  // Firebase Studio origin.
-  allowedDevOrigins: [
-    '6000-firebase-studio-1767175545401.cluster-aic6jbiihrhmyrqafasatvzbwe.cloudworkstations.dev',
-  ],
   typescript: {
     ignoreBuildErrors: true,
   },
