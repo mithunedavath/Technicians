@@ -62,6 +62,7 @@ export default function VendorsPage() {
   const db = useFirestore();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
+  const [vendorNameSearch, setVendorNameSearch] = useState("");
   const [selectedStateFilter, setSelectedStateFilter] = useState("ALL STATES");
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -92,29 +93,44 @@ export default function VendorsPage() {
     return [...new Set(formatted)].sort();
   }, [vendors]);
 
-  // Combined search and state filtering
+  // Combined search, name search, and state filtering
   const filteredVendors = useMemo(() => {
     if (!vendors) return [];
     return vendors.filter(v => {
+      // 1. State Filter
       const stateMatch = selectedStateFilter === "ALL STATES" || 
         v.state?.trim().toUpperCase() === selectedStateFilter.toUpperCase();
 
+      // 2. Dedicated Vendor Name Filter
+      const nameMatch = !vendorNameSearch ||
+        v.companyName?.toLowerCase().includes(vendorNameSearch.toLowerCase());
+
+      // 3. General Codes/Details Search
       const searchMatch = !searchTerm ||
-        v.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         v.vendorCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         v.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         v.panNumber?.toLowerCase().includes(searchTerm.toLowerCase());
 
-      return stateMatch && searchMatch;
+      return stateMatch && nameMatch && searchMatch;
     });
-  }, [vendors, selectedStateFilter, searchTerm]);
+  }, [vendors, selectedStateFilter, vendorNameSearch, searchTerm]);
 
-  // Count active centers based on selected state
+  // Count active centers based on selected state and name search
   const stateVendorCount = useMemo(() => {
     if (!vendors) return 0;
-    if (selectedStateFilter === "ALL STATES") return vendors.length;
-    return vendors.filter(v => v.state?.trim().toUpperCase() === selectedStateFilter.toUpperCase()).length;
-  }, [vendors, selectedStateFilter]);
+    
+    let list = vendors;
+    
+    if (selectedStateFilter !== "ALL STATES") {
+      list = list.filter(v => v.state?.trim().toUpperCase() === selectedStateFilter.toUpperCase());
+    }
+    
+    if (vendorNameSearch) {
+      list = list.filter(v => v.companyName?.toLowerCase().includes(vendorNameSearch.toLowerCase()));
+    }
+    
+    return list.length;
+  }, [vendors, selectedStateFilter, vendorNameSearch]);
 
   const handleDownloadTemplate = () => {
     const headers = Object.keys(VENDOR_FIELDS_MAP);
@@ -235,11 +251,12 @@ export default function VendorsPage() {
 
       <Card className="shadow-lg border-primary/5 overflow-hidden">
         <CardHeader className="bg-muted/30 border-b pb-6">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
             <CardTitle className="text-lg flex items-center gap-2"><Building2 className="h-4 w-4" /> Directory</CardTitle>
-            <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center gap-3 w-full xl:w-auto">
+              {/* State Filter Dropdown */}
               <Select value={selectedStateFilter} onValueChange={setSelectedStateFilter}>
-                <SelectTrigger className="w-[180px] bg-white border-primary/20">
+                <SelectTrigger className="w-[150px] bg-white border-primary/20">
                   <SelectValue placeholder="All States" />
                 </SelectTrigger>
                 <SelectContent className="bg-white">
@@ -250,9 +267,26 @@ export default function VendorsPage() {
                 </SelectContent>
               </Select>
  
-              <div className="relative w-72">
+              {/* Dedicated Vendor Name Search */}
+              <div className="relative w-56">
+                  <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input 
+                    placeholder="Filter by vendor name..." 
+                    value={vendorNameSearch} 
+                    onChange={(e) => setVendorNameSearch(e.target.value)} 
+                    className="pl-9 bg-white" 
+                  />
+              </div>
+ 
+              {/* General Codes/Details Search */}
+              <div className="relative w-64">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                  <Input placeholder="Search records..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
+                  <Input 
+                    placeholder="Search by code, city, PAN..." 
+                    value={searchTerm} 
+                    onChange={(e) => setSearchTerm(e.target.value)} 
+                    className="pl-9 bg-white" 
+                  />
               </div>
             </div>
           </div>
