@@ -50,7 +50,9 @@ const VENDOR_FIELDS_MAP: Record<string, string> = {
   "Agreement Link": "agreementLink",
   "Bill To Address": "billingAddress",
   "Bill To GSTIN": "billingGstin",
-  "GST Type": "billingGstType"
+  "GST Type": "billingGstType",
+  "Districts Covered": "districtsCovered",
+  "District Covered": "districtsCovered"
 };
 
 export default function VendorsPage() {

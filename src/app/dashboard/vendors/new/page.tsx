@@ -70,7 +70,8 @@ export default function NewVendorPage() {
     agreementLink: "",
     billingAddress: "",
     billingGstin: "",
-    billingGstType: "NON GST"
+    billingGstType: "NON GST",
+    districtsCovered: ""
   });
 
   const handleChange = (field: string, value: string) => {
@@ -166,10 +167,19 @@ export default function NewVendorPage() {
         </Card>
 
         <Card>
-          <CardHeader className="bg-muted/30 border-b"><CardTitle className="text-lg flex items-center gap-2"><MapPin className="h-5 w-5" /> Service Addresses</CardTitle></CardHeader>
+          <CardHeader className="bg-muted/30 border-b"><CardTitle className="text-lg flex items-center gap-2"><MapPin className="h-5 w-5" /> Service Addresses & Coverage Areas</CardTitle></CardHeader>
           <CardContent className="pt-6 grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="space-y-2"><Label>Establishment Address</Label><Textarea value={formData.establishmentAddress} onChange={(e) => handleChange("establishmentAddress", e.target.value)} /></div>
             <div className="space-y-2"><Label>Owner's Personal Address</Label><Textarea value={formData.ownerPersonalAddress} onChange={(e) => handleChange("ownerPersonalAddress", e.target.value)} /></div>
+            <div className="space-y-2 md:col-span-2">
+              <Label>Districts Covered (Comma-separated)</Label>
+              <Input 
+                value={formData.districtsCovered} 
+                onChange={(e) => handleChange("districtsCovered", e.target.value)} 
+                placeholder="e.g. Gurugram, Faridabad, Rohtak, Sonipat" 
+              />
+              <p className="text-xs text-muted-foreground">Specify the district names covered by this vendor. Separate each district with a comma.</p>
+            </div>
           </CardContent>
         </Card>
 

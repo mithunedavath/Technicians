@@ -4,7 +4,7 @@
 import { useState, useEffect, type PropsWithChildren } from "react";
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarInset } from "@/components/ui/sidebar";
 import Link from "next/link";
-import { Wrench, Settings, LayoutDashboard, Building2 } from "lucide-react";
+import { Wrench, Settings, LayoutDashboard, Building2, MapPinned } from "lucide-react";
 import { UserNav } from "./components/user-nav";
 import { Header } from "./components/header";
 import { useUser } from "@/firebase";
@@ -52,6 +52,14 @@ export default function DashboardLayout({ children }: PropsWithChildren) {
                     <Link href="/dashboard/vendors">
                       <Building2 className="mr-2 h-4 w-4" />
                       Vendors
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton asChild>
+                    <Link href="/dashboard/map">
+                      <MapPinned className="mr-2 h-4 w-4" />
+                      State Mapping
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
