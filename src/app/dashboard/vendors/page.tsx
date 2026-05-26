@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { collection, query, orderBy, serverTimestamp, getDocs, where } from "firebase/firestore";
 import { useFirestore, useCollection, useMemoFirebase, useUser } from "@/firebase";
 import { addDocumentNonBlocking } from "@/firebase/non-blocking-updates";
@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Building2, Plus, Search, Loader2, Upload, Download, CheckCircle2, AlertTriangle, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { useRouter } from "next/navigation";
@@ -61,6 +62,7 @@ export default function VendorsPage() {
   const db = useFirestore();
   const { toast } = useToast();
   const [searchTerm, setSearchTerm] = useState("");
+  const [selectedStateFilter, setSelectedStateFilter] = useState("ALL STATES");
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -73,12 +75,46 @@ export default function VendorsPage() {
   const vendorsRef = useMemoFirebase(() => query(collection(db, "vendors"), orderBy("companyName")), [db]);
   const { data: vendors, isLoading } = useCollection(vendorsRef);
 
-  const filteredVendors = vendors?.filter(v => 
-    v.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.vendorCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    v.panNumber?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Dynamically extract unique states from all registered vendors
+  const uniqueStates = useMemo(() => {
+    if (!vendors) return [];
+    const states = vendors
+      .map(v => v.state?.trim())
+      .filter(Boolean);
+    
+    // Capitalize correctly (Title Case)
+    const formatted = states.map(s => {
+      return s.split(" ")
+        .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+        .join(" ");
+    });
+
+    return [...new Set(formatted)].sort();
+  }, [vendors]);
+
+  // Combined search and state filtering
+  const filteredVendors = useMemo(() => {
+    if (!vendors) return [];
+    return vendors.filter(v => {
+      const stateMatch = selectedStateFilter === "ALL STATES" || 
+        v.state?.trim().toUpperCase() === selectedStateFilter.toUpperCase();
+
+      const searchMatch = !searchTerm ||
+        v.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        v.vendorCode?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        v.city?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        v.panNumber?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      return stateMatch && searchMatch;
+    });
+  }, [vendors, selectedStateFilter, searchTerm]);
+
+  // Count active centers based on selected state
+  const stateVendorCount = useMemo(() => {
+    if (!vendors) return 0;
+    if (selectedStateFilter === "ALL STATES") return vendors.length;
+    return vendors.filter(v => v.state?.trim().toUpperCase() === selectedStateFilter.toUpperCase()).length;
+  }, [vendors, selectedStateFilter]);
 
   const handleDownloadTemplate = () => {
     const headers = Object.keys(VENDOR_FIELDS_MAP);
@@ -189,19 +225,35 @@ export default function VendorsPage() {
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <Card className="bg-primary/5 border-primary/10">
           <CardContent className="pt-6">
-            <p className="text-xs font-bold text-primary uppercase mb-1">Total Centers</p>
-            <h3 className="text-3xl font-black text-primary">{vendors?.length || 0}</h3>
+            <p className="text-xs font-bold text-primary uppercase mb-1">
+              {selectedStateFilter === "ALL STATES" ? "Total Centers (National)" : `Centers in ${selectedStateFilter}`}
+            </p>
+            <h3 className="text-3xl font-black text-primary">{stateVendorCount}</h3>
           </CardContent>
         </Card>
       </div>
 
       <Card className="shadow-lg border-primary/5 overflow-hidden">
         <CardHeader className="bg-muted/30 border-b pb-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
             <CardTitle className="text-lg flex items-center gap-2"><Building2 className="h-4 w-4" /> Directory</CardTitle>
-            <div className="relative w-72">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input placeholder="Search records..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
+            <div className="flex items-center gap-3">
+              <Select value={selectedStateFilter} onValueChange={setSelectedStateFilter}>
+                <SelectTrigger className="w-[180px] bg-white border-primary/20">
+                  <SelectValue placeholder="All States" />
+                </SelectTrigger>
+                <SelectContent className="bg-white">
+                  <SelectItem value="ALL STATES">🌐 All States</SelectItem>
+                  {uniqueStates.map(state => (
+                    <SelectItem key={state} value={state}>{state}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+ 
+              <div className="relative w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                  <Input placeholder="Search records..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className="pl-9" />
+              </div>
             </div>
           </div>
         </CardHeader>
