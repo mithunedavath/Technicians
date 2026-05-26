@@ -20,6 +20,28 @@ import { useFirestore, useDoc, useMemoFirebase, useCollection } from "@/firebase
 
 type CsvRow = { [key: string]: string };
 
+const getInvoiceNumberForBillingCycle = (billingCycle: string): string => {
+  if (!billingCycle) return "";
+  const cycle = billingCycle.toLowerCase();
+  
+  if (cycle.includes("april") || cycle.includes("apr")) return "INV-001";
+  if (cycle.includes("may")) return "INV-002";
+  if (cycle.includes("june") || cycle.includes("jun")) return "INV-003";
+  if (cycle.includes("july") || cycle.includes("jul")) return "INV-004";
+  if (cycle.includes("august") || cycle.includes("aug")) return "INV-005";
+  if (cycle.includes("september") || cycle.includes("sept") || cycle.includes("sep")) return "INV-006";
+  if (cycle.includes("october") || cycle.includes("oct")) return "INV-007";
+  if (cycle.includes("november") || cycle.includes("nov")) return "INV-008";
+  if (cycle.includes("december") || cycle.includes("dec")) return "INV-009";
+  if (cycle.includes("january") || cycle.includes("jan")) return "INV-010";
+  if (cycle.includes("february") || cycle.includes("feb")) return "INV-011";
+  if (cycle.includes("march") || cycle.includes("mar")) return "INV-012";
+  
+  // Fallback to random if no month matches
+  const random = Math.floor(1000 + Math.random() * 9000);
+  return `INV-${random}`;
+};
+
 export function DashboardClient() {
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
@@ -57,6 +79,13 @@ export function DashboardClient() {
   useEffect(() => {
     setInvoiceDate(new Date().toISOString().split('T')[0]);
   }, []);
+
+  // Update invoice number automatically when billing cycle changes
+  useEffect(() => {
+    if (selectedBillingCycle) {
+      setInvoiceNumber(getInvoiceNumberForBillingCycle(selectedBillingCycle));
+    }
+  }, [selectedBillingCycle]);
 
   // Use the mapped Vendor Code column to find the code for the selected technician
   const getSelectedVendorCode = () => {
@@ -198,11 +227,7 @@ export function DashboardClient() {
   };
   
   const handleGenerateReportClick = () => {
-      if(!invoiceNumber) {
-          const prefix = "INV";
-          const random = Math.floor(1000 + Math.random() * 9000);
-          setInvoiceNumber(`${prefix}-${random}`);
-      }
+      setInvoiceNumber(getInvoiceNumberForBillingCycle(selectedBillingCycle));
       setIsPayoutDialogOpen(true);
   };
 
