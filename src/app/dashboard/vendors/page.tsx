@@ -301,6 +301,7 @@ export default function VendorsPage() {
                   <TableHead className="font-bold">Company / Center Name</TableHead>
                   <TableHead className="font-bold">Vendor Code</TableHead>
                   <TableHead className="font-bold">Owner</TableHead>
+                  <TableHead className="font-bold">State</TableHead>
                   <TableHead className="font-bold">City</TableHead>
                   <TableHead className="font-bold">Status</TableHead>
                   <TableHead className="text-right font-bold pr-8">Actions</TableHead>
@@ -312,6 +313,7 @@ export default function VendorsPage() {
                     <TableCell className="font-semibold">{v.companyName}</TableCell>
                     <TableCell className="font-mono text-xs text-primary font-bold">{v.vendorCode}</TableCell>
                     <TableCell className="text-xs">{v.ownerName}</TableCell>
+                    <TableCell className="text-xs font-semibold text-slate-600">{v.state || "N/A"}</TableCell>
                     <TableCell className="text-xs">{v.city}</TableCell>
                     <TableCell>
                       <Badge variant={v.status === "Active" ? "default" : "secondary"}>{v.status}</Badge>
