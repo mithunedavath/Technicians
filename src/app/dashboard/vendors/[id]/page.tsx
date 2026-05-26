@@ -1,7 +1,7 @@
 
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { doc, serverTimestamp } from "firebase/firestore";
 import { useFirestore, useDoc, useUser, useMemoFirebase } from "@/firebase";
 import { updateDocumentNonBlocking, deleteDocumentNonBlocking } from "@/firebase/non-blocking-updates";
