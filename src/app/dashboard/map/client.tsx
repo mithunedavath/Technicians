@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Map, MapPin, Building2, User, Phone, CheckCircle2, AlertTriangle, RefreshCw, Layers, ShieldCheck, MapPinned, Globe, Eye, PhoneCall, Mail, DollarSign } from "lucide-react";
+import { Map, MapPin, Building2, User, Phone, CheckCircle2, AlertTriangle, RefreshCw, Layers, ShieldCheck, MapPinned, Globe, Eye, PhoneCall, Mail, DollarSign, Printer } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 
@@ -63,6 +63,13 @@ const STATE_DISTRICTS_PRESETS: Record<string, string[]> = {
   ],
   "UTTAR PRADESH": [
     "Noida", "Ghaziabad", "Lucknow", "Kanpur", "Agra", "Varanasi", "Meerut", "Bulandshahr", "Hapur", "Muzaffarnagar"
+  ],
+  "MAHARASHTRA": [
+    "Ahmednagar", "Akola", "Amravati", "Aurangabad", "Beed", "Bhandara", "Buldhana", "Chandrapur", 
+    "Dhule", "Gadchiroli", "Gondia", "Hingoli", "Jalgaon", "Jalna", "Kolhapur", "Latur", 
+    "Mumbai City", "Mumbai Suburban", "Nagpur", "Nanded", "Nandurbar", "Nashik", "Osmanabad", 
+    "Palghar", "Parbhani", "Pune", "Raigad", "Ratnagiri", "Sangli", "Satara", "Sindhudurg", 
+    "Solapur", "Thane", "Wardha", "Washim", "Yavatmal"
   ]
 };
 
@@ -168,10 +175,9 @@ function parseSvgPathToPoints(pathD: string): [number, number][] {
   return points;
 }
 
-// Projection algorithm to convert SVG vector coordinates into real Geographical Lat/Lng coordinates
+// Projection algorithm to convert SVG vector coordinates into real Geographical Lat/Lng coordinates for Leaflet
 function projectSvgPointsToLatLng(points: [number, number][], stateName: string): [number, number][] {
   if (stateName === "ALL INDIA") {
-    // Center point of India SVG is roughly (380, 480), Lat/Lng is centered around (22.97, 78.65)
     return points.map(([x, y]) => {
       const lat = 36.5 - (y - 40) * 0.041;
       const lng = 67.5 + (x - 20) * 0.0385;
@@ -179,7 +185,6 @@ function projectSvgPointsToLatLng(points: [number, number][], stateName: string)
     });
   }
   if (stateName === "HARYANA") {
-    // Scale and translate Haryana districts centered at (29.0588, 76.0856)
     return points.map(([x, y]) => {
       const lat = 30.6 - (y - 10) * 0.0092;
       const lng = 74.05 + (x - 30) * 0.0105;
@@ -187,7 +192,6 @@ function projectSvgPointsToLatLng(points: [number, number][], stateName: string)
     });
   }
   if (stateName === "DELHI") {
-    // Delhi districts coordinate mapping
     return points.map(([x, y]) => {
       const lat = 28.89 - (y - 50) * 0.00125;
       const lng = 76.82 + (x - 40) * 0.00148;
@@ -195,14 +199,13 @@ function projectSvgPointsToLatLng(points: [number, number][], stateName: string)
     });
   }
   if (stateName === "UTTAR PRADESH") {
-    // UP districts coordinate mapping
     return points.map(([x, y]) => {
       const lat = 29.7 - (y - 10) * 0.009;
       const lng = 76.8 + (x - 90) * 0.0102;
       return [lat, lng];
     });
   }
-  return points.map(([x, y]) => [y, x]); // default fallback
+  return points.map(([x, y]) => [y, x]);
 }
 
 export function MapClient() {
@@ -215,7 +218,8 @@ export function MapClient() {
   const [activeVendorFilter, setActiveVendorFilter] = useState<string | null>(null);
   const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
   
-  // Base layer toggle: "street" (Standard map) or "satellite" (Satellite Hybrid with labels)
+  // Dual layout: "political" (crisp, solid vector plane SVG) or "hybrid" (Leaflet satellite hybrid map)
+  const [mapTab, setMapTab] = useState<"political" | "hybrid">("political");
   const [leafletBaseLayer, setLeafletBaseLayer] = useState<"street" | "satellite">("satellite");
   
   const [mounted, setMounted] = useState(false);
@@ -273,8 +277,6 @@ export function MapClient() {
     
     // Choose presets based on selected state
     let presetDistricts = STATE_DISTRICTS_PRESETS[selectedState] || [];
-    
-    // Gather all unique district entries entered by users
     const allDistrictsSet = new Set<string>(presetDistricts);
     
     if (selectedState !== "ALL INDIA") {
@@ -338,7 +340,26 @@ export function MapClient() {
     };
   }, [districtCoverage]);
 
-  // Get active boundaries dataset based on state selection (All India outline vs State detailed districts)
+  const handleStatePathClick = (stateName: string) => {
+    const upper = stateName.toUpperCase();
+    if (availableStates.includes(upper)) {
+      setSelectedState(upper);
+      setActiveVendorFilter(null);
+      setSelectedDistrict(null);
+      toast({
+        title: `Showing ${stateName}`,
+        description: `Switched view to isolated state political map of ${stateName}.`,
+      });
+    } else {
+      toast({
+        variant: "destructive",
+        title: "No Coverage",
+        description: `No registered service centers in ${stateName}.`,
+      });
+    }
+  };
+
+  // Get active boundaries dataset based on state selection
   const activeBoundaryDataset = useMemo(() => {
     if (selectedState === "ALL INDIA") {
       return SVG_INDIA_PATHS;
@@ -356,15 +377,28 @@ export function MapClient() {
     return filteredVendors.filter(v => vendorsList.some(vl => vl.vendorId === v.id));
   }, [selectedDistrict, districtCoverage, filteredVendors]);
 
-  // Ref value helper to allow Leaflet event handlers to access active values without re-triggering effect
+  // Ref value helper to allow Leaflet event handlers to access active values
   const refsHelper = useRef({ setSelectedState, setSelectedDistrict, selectedDistrict });
   useEffect(() => {
     refsHelper.current = { setSelectedState, setSelectedDistrict, selectedDistrict };
   }, [setSelectedState, setSelectedDistrict, selectedDistrict]);
 
-  // Dynamic Leaflet Geographic overlay initialization
+  // Trigger window print dialog
+  const handlePrintMap = () => {
+    window.print();
+  };
+
+  // Initialize and update the Leaflet Hybrid/Satellite Map (Only runs when "hybrid" tab is active)
   useEffect(() => {
-    if (typeof window === "undefined" || !mapContainerRef.current) return;
+    if (mapTab !== "hybrid" || typeof window === "undefined" || !mapContainerRef.current) {
+      if (leafletMapInstanceRef.current) {
+        leafletMapInstanceRef.current.remove();
+        leafletMapInstanceRef.current = null;
+        leafletPolygonsGroupRef.current = null;
+        leafletMarkersGroupRef.current = null;
+      }
+      return;
+    }
 
     const L = require("leaflet");
 
@@ -399,12 +433,10 @@ export function MapClient() {
         maxZoom: 19
       }).addTo(map);
     } else {
-      // High-resolution satellite tiles
       L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
         maxZoom: 18
       }).addTo(map);
       
-      // Inject cities/streets labels overlay directly on top of satellite
       L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", {
         maxZoom: 20
       }).addTo(map);
@@ -414,7 +446,7 @@ export function MapClient() {
     leafletPolygonsGroupRef.current.clearLayers();
     leafletMarkersGroupRef.current.clearLayers();
 
-    // 1. Draw boundary polygons (State or District outlines) directly on the Satellite Map
+    // 1. Draw boundary polygons directly on the Satellite Map
     if (activeBoundaryDataset) {
       activeBoundaryDataset.forEach(boundary => {
         const svgPoints = parseSvgPathToPoints(boundary.d);
@@ -425,8 +457,7 @@ export function MapClient() {
         const nameKey = boundary.name.toUpperCase();
         const isSelected = refsHelper.current.selectedDistrict === nameKey;
 
-        // Styling calculations
-        let fillColor = "#64748b"; // neutral grey default
+        let fillColor = "#64748b";
         let isCovered = false;
         let strokeColor = "#334155";
         let titleContent = "";
@@ -435,14 +466,13 @@ export function MapClient() {
           const density = stateVendorCounts[nameKey] || 0;
           isCovered = density > 0;
           if (isCovered) {
-            if (density === 1) fillColor = "#10b981"; // emerald-500
-            else if (density <= 3) fillColor = "#059669"; // emerald-600
-            else fillColor = "#047857"; // emerald-700
+            if (density === 1) fillColor = "#10b981";
+            else if (density <= 3) fillColor = "#059669";
+            else fillColor = "#047857";
           }
           strokeColor = "#ffffff";
-          titleContent = `${boundary.name} (${density} Active Service Center${density > 1 ? 's' : ''})`;
+          titleContent = `${boundary.name} (${density} Center${density > 1 ? 's' : ''})`;
         } else {
-          // State level - district boundaries
           const coveringVendors = districtCoverage.coverage[nameKey] || [];
           isCovered = coveringVendors.length > 0;
           
@@ -451,10 +481,10 @@ export function MapClient() {
             fillColor = vendorColors[firstVendor.vendorId]?.base || "#3b82f6";
             strokeColor = vendorColors[firstVendor.vendorId]?.base || "#2563eb";
           } else {
-            fillColor = "#94a3b8"; // unserved district gray fill
+            fillColor = "#94a3b8";
             strokeColor = "#cbd5e1";
           }
-          titleContent = `${boundary.name} ${isCovered ? `(Covered by: ${coveringVendors.map(v => v.code).join(", ")})` : "(Unserved Territory)"}`;
+          titleContent = `${boundary.name} ${isCovered ? `(Covered by: ${coveringVendors.map(v => v.code).join(", ")})` : "(Unserved)"}`;
         }
 
         if (isSelected) {
@@ -465,22 +495,20 @@ export function MapClient() {
           color: strokeColor,
           weight: isSelected ? 3 : 1.2,
           fillColor: fillColor,
-          fillOpacity: isCovered ? 0.22 : 0.06, // Translucent to keep satellite roads/building structures underneath perfectly visible
+          fillOpacity: isCovered ? 0.22 : 0.06,
           className: "interactive-map-polygon"
         });
 
         // Hover events
         polygon.on("mouseover", function (e: any) {
-          const layer = e.target;
-          layer.setStyle({
+          e.target.setStyle({
             fillOpacity: isCovered ? 0.35 : 0.15,
             weight: isSelected ? 3.5 : 2.0
           });
         });
 
         polygon.on("mouseout", function (e: any) {
-          const layer = e.target;
-          layer.setStyle({
+          e.target.setStyle({
             fillOpacity: isCovered ? 0.22 : 0.06,
             weight: isSelected ? 3 : 1.2
           });
@@ -489,23 +517,15 @@ export function MapClient() {
         // Click events
         polygon.on("click", function () {
           if (selectedState === "ALL INDIA") {
-            // switch to isolated state
             refsHelper.current.setSelectedState(nameKey);
             refsHelper.current.setSelectedDistrict(null);
-            toast({
-              title: `Isolated State view: ${boundary.name}`,
-              description: `Zoomed with boundaries and districts. Showing only local service centers.`,
-            });
           } else {
-            // select district
             const alreadySelected = refsHelper.current.selectedDistrict === nameKey;
             refsHelper.current.setSelectedDistrict(alreadySelected ? null : nameKey);
           }
         });
 
-        // Bind simple tooltip showing name
         polygon.bindTooltip(titleContent, { sticky: true, className: "text-xs font-bold font-sans" });
-
         leafletPolygonsGroupRef.current.addLayer(polygon);
       });
     }
@@ -522,7 +542,6 @@ export function MapClient() {
 
       if (!isFiltered) return;
 
-      // Custom pulsing pin icon
       const customMarkerIcon = L.divIcon({
         className: "custom-leaflet-marker",
         html: `<div style="background-color: ${colorSet.base}; border: 2px solid white; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.5);" class="animate-bounce"></div>`,
@@ -535,15 +554,11 @@ export function MapClient() {
       marker.bindPopup(`
         <div class="p-2 space-y-1 text-slate-800 text-xs font-sans">
           <strong style="color: ${colorSet.base}; font-size: 13px;">${vendor.companyName}</strong><br/>
-          <strong>Vendor Code:</strong> ${vendor.vendorCode}<br/>
-          <strong>Districts:</strong> ${vendor.districtsCovered || 'City center'}<br/>
-          <strong>State:</strong> ${vendor.state || 'N/A'}<br/>
-          <strong>Owner:</strong> ${vendor.ownerName || 'N/A'}<br/>
+          <strong>Code:</strong> ${vendor.vendorCode}<br/>
           <strong>Phone:</strong> ${vendor.contactNumber || 'N/A'}
         </div>
       `);
 
-      // 35km transparent coverage circle zone
       const circle = L.circle([coords.lat, coords.lng], {
         color: colorSet.base,
         fillColor: colorSet.base,
@@ -555,11 +570,10 @@ export function MapClient() {
       leafletMarkersGroupRef.current.addLayer(circle);
     });
 
-    // 3. Zoom / Fit Map bounds precisely to show ONLY the selected state
+    // 3. Zoom / Fit Map bounds precisely
     if (selectedState === "ALL INDIA") {
       map.setView([STATE_CENTERS["ALL INDIA"].lat, STATE_CENTERS["ALL INDIA"].lng], STATE_CENTERS["ALL INDIA"].zoom);
     } else {
-      // Zoom map to fit the state's district polygons boundary box
       const bounds = leafletPolygonsGroupRef.current.getBounds();
       if (bounds.isValid()) {
         map.fitBounds(bounds, { padding: [30, 30] });
@@ -569,7 +583,7 @@ export function MapClient() {
       }
     }
 
-  }, [selectedState, activeBoundaryDataset, filteredVendors, vendorColors, leafletBaseLayer, activeVendorFilter, stateVendorCounts, districtCoverage, selectedDistrict]);
+  }, [mapTab, selectedState, activeBoundaryDataset, filteredVendors, vendorColors, leafletBaseLayer, activeVendorFilter, stateVendorCounts, districtCoverage, selectedDistrict]);
 
   if (!mounted || isUserLoading || !user) {
     return (
@@ -583,8 +597,68 @@ export function MapClient() {
   return (
     <div className="space-y-6 pb-12 animate-in fade-in duration-500">
       
+      {/* Dynamic Global Print Media Style Sheet Injection */}
+      <style jsx global>{`
+        @media print {
+          body {
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
+            background-color: #ffffff !important;
+            color: #000000 !important;
+          }
+          /* Hide everything except the print map container */
+          body * {
+            visibility: hidden;
+          }
+          #printable-map-area, #printable-map-area * {
+            visibility: visible;
+          }
+          #printable-map-area {
+            position: static !important;
+            display: block !important;
+            width: 100% !important;
+            height: auto !important;
+            border: none !important;
+            box-shadow: none !important;
+            padding: 0 !important;
+            margin: 0 !important;
+            background-color: #ffffff !important;
+          }
+          .no-print {
+            display: none !important;
+          }
+          .print-title {
+            display: block !important;
+            font-size: 22px !important;
+            font-weight: 800 !important;
+            color: #1e3a8a !important;
+            margin-bottom: 15px !important;
+            border-bottom: 2px solid #cbd5e1 !important;
+            padding-bottom: 8px !important;
+          }
+          .print-legend {
+            display: grid !important;
+            grid-template-columns: repeat(3, 1fr) !important;
+            gap: 10px !important;
+            margin-top: 20px !important;
+            border-top: 2px solid #cbd5e1 !important;
+            padding-top: 12px !important;
+          }
+          .print-legend-item {
+            display: flex !important;
+            align-items: center !important;
+            gap: 6px !important;
+            font-size: 10px !important;
+            color: #334155 !important;
+          }
+          .page-break-before-always {
+            page-break-before: always !important;
+          }
+        }
+      `}</style>
+      
       {/* Page Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 no-print">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight flex items-center gap-2">
             <MapPinned className="h-8 w-8 text-primary" /> State Coverage Mapping
@@ -607,27 +681,28 @@ export function MapClient() {
             </SelectContent>
           </Select>
 
-          {/* Satellite / Street Map Toggle */}
+          {/* Toggle Map Mode */}
           <div className="flex rounded-lg border bg-slate-100 p-0.5 shadow-sm text-xs font-bold">
             <button 
-              onClick={() => setLeafletBaseLayer("street")}
+              onClick={() => setMapTab("political")}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-md transition-all ${
-                leafletBaseLayer === "street" 
+                mapTab === "political" 
                   ? "bg-white text-primary shadow" 
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              Streets
+              <Building2 className="h-3.5 w-3.5" /> Political Map (Flat SVG)
             </button>
             <button 
-              onClick={() => setLeafletBaseLayer("satellite")}
+              disabled={isVendorsLoading}
+              onClick={() => setMapTab("hybrid")}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-md transition-all ${
-                leafletBaseLayer === "satellite" 
+                mapTab === "hybrid" 
                   ? "bg-white text-primary shadow" 
-                  : "text-slate-500 hover:text-slate-800"
+                  : "text-slate-500 hover:text-slate-800 disabled:opacity-50"
               }`}
             >
-              Satellite Hybrid
+              <Globe className="h-3.5 w-3.5" /> Satellite Hybrid Map
             </button>
           </div>
         </div>
@@ -636,36 +711,421 @@ export function MapClient() {
       {/* Main Map Dashboard Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Left Section: Geographic Map with Boundary Overlays */}
-        <Card className="lg:col-span-7 shadow-lg border-primary/10 bg-white/80 backdrop-blur-sm overflow-hidden flex flex-col min-h-[580px] relative">
-          <CardHeader className="bg-primary/5 border-b pb-4">
-            <CardTitle className="text-lg flex items-center gap-2 text-primary">
-              <Layers className="h-5 w-5 animate-pulse" />
-              {selectedState === "ALL INDIA" ? "All-India Coverage Command" : `${selectedState} Isolated Boundaries Map`}
-            </CardTitle>
-            <CardDescription className="text-xs">
-              District boundaries are drawn directly on top of the satellite map. Streets, roads, and cities remain fully visible underneath.
-            </CardDescription>
-          </CardHeader>
+        {/* Left Section: Clean SVG Political Map or Leaflet Satellite Map */}
+        <div className="lg:col-span-7 flex flex-col gap-4">
           
-          <CardContent className="flex-1 p-0 relative min-h-[480px]">
-            {isVendorsLoading && (
-              <div className="absolute inset-0 bg-slate-50/80 z-30 flex flex-col items-center justify-center gap-2">
-                <RefreshCw className="h-8 w-8 animate-spin text-primary" />
-                <p className="text-xs text-muted-foreground">Synchronizing boundaries...</p>
+          <Card 
+            id="printable-map-area" 
+            className="shadow-lg border-primary/10 bg-white overflow-hidden flex flex-col min-h-[580px]"
+          >
+            {/* Printed Page Header (Hidden on Web Screen) */}
+            <div className="hidden print-title">
+              <div className="flex justify-between items-center">
+                <span>{selectedState === "ALL INDIA" ? "All India Vendor Coverage Political Map" : `${selectedState} Operations & Territory Coverage Map`}</span>
+                <span className="text-[10px] text-slate-400 font-normal">Generated: {new Date().toLocaleDateString()}</span>
               </div>
-            )}
-            
-            {/* The Unified Leaflet Map Container */}
-            <div 
-              ref={mapContainerRef} 
-              className="absolute inset-0 w-full h-full z-10"
-            />
-          </CardContent>
-        </Card>
+              <div className="text-xs font-semibold text-slate-500 mt-1">
+                Serviced Districts: {stats.coveredDistrictsCount} / {stats.totalDistricts} ({stats.coveragePercent}% coverage)
+              </div>
+            </div>
+
+            <CardHeader className="bg-primary/5 border-b pb-4 flex flex-row items-center justify-between no-print">
+              <div>
+                <CardTitle className="text-lg flex items-center gap-2 text-primary">
+                  {mapTab === "political" ? (
+                    <>
+                      <Layers className="h-5 w-5 animate-pulse" />
+                      {selectedState === "ALL INDIA" ? "All-India Political Boundary Map" : `${selectedState} Isolated Political Map`}
+                    </>
+                  ) : (
+                    <>
+                      <Globe className="h-5 w-5 text-emerald-600 animate-spin-slow" />
+                      {selectedState === "ALL INDIA" ? "All-India Geographical Overlay" : `${selectedState} Geographical Hybrid Map`}
+                    </>
+                  )}
+                </CardTitle>
+                <CardDescription className="text-xs">
+                  {mapTab === "political" 
+                    ? "Flat vector boundaries ideal for easy visual marking, zone highlights, and perfect PDF printing." 
+                    : "Live interactive coordinate mapping with service coverage zones."
+                  }
+                </CardDescription>
+              </div>
+              
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2">
+                {mapTab === "political" && (
+                  <Button 
+                    size="sm" 
+                    variant="outline" 
+                    onClick={handlePrintMap}
+                    className="border-primary/20 hover:bg-primary/5 text-primary text-xs flex items-center gap-1.5 shadow"
+                  >
+                    <Printer className="h-3.5 w-3.5" /> Print Area Map
+                  </Button>
+                )}
+                {mapTab === "hybrid" && (
+                  <div className="flex border rounded-lg overflow-hidden text-[10px] font-bold bg-white shadow-sm">
+                    <button 
+                      onClick={() => setLeafletBaseLayer("street")} 
+                      className={`px-2.5 py-1 ${leafletBaseLayer === "street" ? "bg-slate-200 text-slate-800" : "text-slate-400 hover:bg-slate-50"}`}
+                    >
+                      Streets
+                    </button>
+                    <button 
+                      onClick={() => setLeafletBaseLayer("satellite")} 
+                      className={`px-2.5 py-1 ${leafletBaseLayer === "satellite" ? "bg-slate-200 text-slate-800" : "text-slate-400 hover:bg-slate-50"}`}
+                    >
+                      Satellite
+                    </button>
+                  </div>
+                )}
+              </div>
+            </CardHeader>
+
+            <CardContent className="flex-1 flex items-center justify-center p-4 relative bg-slate-50/20 min-h-[480px]">
+              {mapTab === "political" ? (
+                // LAYOUT: Flat crisp SVG Political map (Perfect for drawing and printing!)
+                selectedState === "ALL INDIA" ? (
+                  // All India Flat Vector SVG Outline
+                  <svg 
+                    viewBox="50 0 750 900" 
+                    className="w-full h-full max-h-[550px] drop-shadow-lg"
+                  >
+                    <g stroke="#334155" strokeWidth="1.2" strokeLinejoin="round">
+                      {SVG_INDIA_PATHS.map((path) => {
+                        const density = stateVendorCounts[path.name.toUpperCase()] || 0;
+                        const hasVendors = density > 0;
+                        
+                        let fill = "#f8fafc"; // Flat clean slate-50
+                        
+                        if (hasVendors) {
+                          if (density === 1) fill = "#d1fae5"; // emerald-100
+                          else if (density <= 3) fill = "#a7f3d0"; // emerald-200
+                          else fill = "#6ee7b7"; // emerald-300
+                        }
+
+                        return (
+                          <path
+                            key={path.id}
+                            d={path.d}
+                            fill={fill}
+                            className="transition-all duration-200 cursor-pointer hover:fill-blue-100"
+                            onClick={() => handleStatePathClick(path.name)}
+                          >
+                            <title>
+                              {`${path.name} ${density > 0 ? `(${density} Center${density > 1 ? 's' : ''})` : "(No Active Center)"}`}
+                            </title>
+                          </path>
+                        );
+                      })}
+                    </g>
+                  </svg>
+                ) : (
+                  // Isolated State Flat Vector SVG Outlines (Haryana / Delhi / UP)
+                  activeBoundaryDataset ? (
+                    <svg 
+                      viewBox="0 0 450 500" 
+                      className="w-full h-full max-h-[500px] drop-shadow-md"
+                    >
+                      <g stroke="#334155" strokeWidth="1.2" strokeLinejoin="round">
+                        {activeBoundaryDataset.map((district) => {
+                          const nameKey = district.name.toUpperCase();
+                          const coveringVendors = districtCoverage.coverage[nameKey] || [];
+                          const isCovered = coveringVendors.length > 0;
+                          const isSelected = selectedDistrict === nameKey;
+                          
+                          // Style based on covering vendor
+                          let fill = "#f8fafc"; // Flat Slate-50 default
+                          let strokeColor = "#334155";
+                          let strokeWidth = "1.2";
+                          
+                          if (isCovered) {
+                            const firstVendor = coveringVendors[0];
+                            fill = vendorColors[firstVendor.vendorId]?.base || "#e0f2fe";
+                          } else {
+                            fill = "#e2e8f0"; // slate-200 unserved flat fill
+                          }
+                          
+                          if (isSelected) {
+                            strokeColor = "#2563eb"; // Blue outline
+                            strokeWidth = "2.8";
+                          }
+
+                          return (
+                            <path
+                              key={district.id}
+                              d={district.d}
+                              fill={fill}
+                              stroke={strokeColor}
+                              strokeWidth={strokeWidth}
+                              className="transition-all duration-200 cursor-pointer hover:fill-blue-100"
+                              onClick={() => setSelectedDistrict(isSelected ? null : nameKey)}
+                            >
+                              <title>
+                                {`${district.name} ${isCovered ? `(Covered by: ${coveringVendors.map(v => v.code).join(", ")})` : "(Unserved)"}`}
+                              </title>
+                            </path>
+                          );
+                        })}
+                      </g>
+                    </svg>
+                  ) : (
+                    // Vector District Schematic Grid Map for other states (Maharashtra, Karnataka, etc.)
+                    <div className="w-full flex flex-col gap-4 p-2 text-slate-800">
+                      <div className="flex items-center justify-between text-xs text-slate-500 border-b pb-2 no-print">
+                        <span className="font-bold flex items-center gap-1">
+                          <Layers className="h-3.5 w-3.5 text-primary animate-pulse" /> Schematic District Grid Map
+                        </span>
+                        <span className="font-semibold">{districtCoverage.allDistricts.length} Districts Total</span>
+                      </div>
+                      
+                      {districtCoverage.allDistricts.length > 0 ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 w-full max-h-[460px] overflow-y-auto pr-1 print:max-h-none print:overflow-visible">
+                          {districtCoverage.allDistricts.map((district) => {
+                            const nameKey = district.toUpperCase();
+                            const coveringVendors = districtCoverage.coverage[nameKey] || [];
+                            const isCovered = coveringVendors.length > 0;
+                            const isSelected = selectedDistrict === nameKey;
+
+                            let bgStyle: React.CSSProperties = {};
+                            let borderClass = "border-slate-200 bg-slate-50 text-slate-700 hover:border-slate-400";
+                            let dotColor = "bg-slate-300";
+
+                            if (isCovered) {
+                              const firstVendor = coveringVendors[0];
+                              const colors = vendorColors[firstVendor.vendorId];
+                              bgStyle = { 
+                                backgroundColor: isSelected ? colors?.base : colors?.bg,
+                                borderColor: colors?.border,
+                                color: isSelected ? "#ffffff" : "#0f172a"
+                              };
+                              borderClass = "border-solid shadow-sm hover:scale-[1.02] print:hover:scale-100";
+                              dotColor = isSelected ? "bg-white" : "bg-emerald-500 animate-pulse";
+                            } else {
+                              if (isSelected) {
+                                bgStyle = { backgroundColor: "#ef4444", borderColor: "#dc2626", color: "#ffffff" };
+                                borderClass = "border-solid hover:scale-[1.02] print:hover:scale-100";
+                                dotColor = "bg-white";
+                              } else {
+                                bgStyle = { backgroundColor: "#f8fafc", borderColor: "#e2e8f0", color: "#64748b" };
+                              }
+                            }
+
+                            return (
+                              <button
+                                key={district}
+                                onClick={() => setSelectedDistrict(isSelected ? null : nameKey)}
+                                style={bgStyle}
+                                className={`p-3 rounded-xl border text-left text-xs transition-all duration-200 cursor-pointer flex flex-col justify-between h-20 shadow-sm print:shadow-none ${borderClass}`}
+                              >
+                                <div className="flex justify-between items-start w-full gap-2">
+                                  <span className="font-extrabold truncate uppercase tracking-tight text-[10px]">{district}</span>
+                                  <div className={`w-2 h-2 rounded-full shrink-0 ${dotColor}`} />
+                                </div>
+                                <div className="flex justify-between items-end w-full text-[9px] mt-2 font-medium">
+                                  <span className="font-mono text-[8px]">{isCovered ? `CODE: ${coveringVendors.map(v => v.code).join(", ")}` : "UNSERVED"}</span>
+                                  {isCovered && (
+                                    <span className={isSelected ? "text-white/80" : "text-emerald-600 font-bold"}>Served</span>
+                                  )}
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center p-16 text-center bg-slate-50 border rounded-2xl">
+                          <AlertTriangle className="h-8 w-8 text-amber-500 mb-2 animate-bounce" />
+                          <p className="font-extrabold text-slate-800 text-sm">No Districts Registered</p>
+                          <p className="text-[10px] text-slate-500 max-w-[240px] mt-1">
+                            Please add covered districts in the Vendor Profile page or excel template to visualize regional coverage cards.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )
+                )
+              ) : (
+                // LAYOUT: Live geographical Leaflet Satellite Hybrid map
+                <div 
+                  ref={mapContainerRef} 
+                  className="absolute inset-0 w-full h-full z-10"
+                />
+              )}
+
+              {/* Vector Map Legends (Printed & Web view synced) */}
+              {mapTab === "political" && (
+                selectedState === "ALL INDIA" ? (
+                  <div className="absolute bottom-4 left-4 bg-white/95 border rounded-xl p-3 text-[10px] space-y-1 shadow z-20 print-legend">
+                    <div className="font-bold text-muted-foreground uppercase text-[9px] mb-1 no-print">State Center Density</div>
+                    <div className="flex items-center gap-2 print-legend-item">
+                      <div className="w-3.5 h-3.5 bg-[#6ee7b7] rounded border border-slate-400" />
+                      <span>High Density (4+ Centers)</span>
+                    </div>
+                    <div className="flex items-center gap-2 print-legend-item">
+                      <div className="w-3.5 h-3.5 bg-[#a7f3d0] rounded border border-slate-400" />
+                      <span>Medium Density (2-3 Centers)</span>
+                    </div>
+                    <div className="flex items-center gap-2 print-legend-item">
+                      <div className="w-3.5 h-3.5 bg-[#d1fae5] rounded border border-slate-400" />
+                      <span>Single Service Center</span>
+                    </div>
+                    <div className="flex items-center gap-2 print-legend-item">
+                      <div className="w-3.5 h-3.5 bg-[#f8fafc] rounded border border-slate-400" />
+                      <span className="text-muted-foreground">No Registered Centers</span>
+                    </div>
+                  </div>
+                ) : (
+                  // State Level Legend matching dynamic vendor colors
+                  <div className="absolute bottom-4 left-4 bg-white/95 border rounded-xl p-3 text-[10px] space-y-1.5 shadow z-20 print-legend max-h-[140px] overflow-y-auto max-w-[280px]">
+                    <div className="font-bold text-muted-foreground uppercase text-[9px] mb-1 no-print">State Coverage Color Key</div>
+                    {filteredVendors.map(vendor => {
+                      const colorSet = vendorColors[vendor.id];
+                      return (
+                        <div key={vendor.id} className="flex items-center gap-2 print-legend-item">
+                          <div style={{ backgroundColor: colorSet?.base }} className="w-3.5 h-3.5 rounded border border-slate-400" />
+                          <span className="font-semibold truncate max-w-[190px]">{vendor.companyName} ({vendor.vendorCode})</span>
+                        </div>
+                      );
+                    })}
+                    <div className="flex items-center gap-2 print-legend-item">
+                      <div className="w-3.5 h-3.5 bg-[#e2e8f0] rounded border border-slate-400" />
+                      <span className="text-muted-foreground">Unserved District / No Coverage</span>
+                    </div>
+                  </div>
+                )
+              )}
+
+              {/* Print-Only Detailed Report Table (Hidden on Web Screen, Flawless on Printout) */}
+              {selectedState !== "ALL INDIA" && (
+                <div className="hidden print:block mt-8 pt-6 border-t border-slate-200 w-full page-break-before-always text-slate-800 text-left">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h2 className="text-xl font-extrabold text-blue-900">{selectedState} District Dispatch Directory</h2>
+                      <p className="text-[10px] text-slate-500">Complete breakdown of territorial service dispatch assignments and rates.</p>
+                    </div>
+                    <div className="text-right text-[10px] text-slate-500">
+                      <div>Coverage: {stats.coveragePercent}% ({stats.coveredDistrictsCount}/{stats.totalDistricts})</div>
+                      <div>Active Centers: {filteredVendors.length}</div>
+                    </div>
+                  </div>
+                  
+                  <table className="w-full text-left border-collapse text-xs border border-slate-200">
+                    <thead>
+                      <tr className="border-b-2 border-slate-300 bg-slate-50 text-slate-700 font-bold">
+                        <th className="py-2 px-3 border border-slate-200">District</th>
+                        <th className="py-2 px-3 border border-slate-200">Status</th>
+                        <th className="py-2 px-3 border border-slate-200">Assigned Service Center</th>
+                        <th className="py-2 px-3 border border-slate-200">Code</th>
+                        <th className="py-2 px-3 border border-slate-200">Contact Person</th>
+                        <th className="py-2 px-3 border border-slate-200">Contact Number</th>
+                        <th className="py-2 px-3 border border-slate-200">Rate LC</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {districtCoverage.allDistricts.map((district) => {
+                        const nameKey = district.toUpperCase();
+                        const covering = districtCoverage.coverage[nameKey] || [];
+                        const isCovered = covering.length > 0;
+                        
+                        if (isCovered) {
+                          return covering.map((cov, index) => {
+                            const vendor = filteredVendors.find(v => v.id === cov.vendorId);
+                            return (
+                              <tr key={`${district}-${cov.vendorId}`} className="border-b border-slate-200">
+                                {index === 0 && (
+                                  <td className="py-2 px-3 font-bold text-slate-900 border border-slate-200 bg-slate-50/50" rowSpan={covering.length}>{district}</td>
+                                )}
+                                <td className="py-2 px-3 border border-slate-200">
+                                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    ACTIVE
+                                  </span>
+                                </td>
+                                <td className="py-2 px-3 font-medium border border-slate-200">{cov.vendorName}</td>
+                                <td className="py-2 px-3 font-mono font-bold text-blue-700 border border-slate-200">{cov.code}</td>
+                                <td className="py-2 px-3 border border-slate-200">{vendor?.ownerName || "N/A"}</td>
+                                <td className="py-2 px-3 border border-slate-200">{vendor?.contactNumber || "N/A"}</td>
+                                <td className="py-2 px-3 font-bold text-slate-800 border border-slate-200">₹{vendor?.rateLC || "N/A"}</td>
+                              </tr>
+                            );
+                          });
+                        } else {
+                          return (
+                            <tr key={district} className="border-b border-slate-200 bg-slate-50/20 text-slate-400">
+                              <td className="py-2 px-3 font-bold text-slate-500 border border-slate-200 bg-slate-50/50">{district}</td>
+                              <td className="py-2 px-3 border border-slate-200">
+                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-400 border border-slate-200">
+                                  UNSERVED
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 border border-slate-200 italic" colSpan={5}>
+                                No active service center mapped for this district.
+                              </td>
+                            </tr>
+                          );
+                        }
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              {selectedState === "ALL INDIA" && (
+                <div className="hidden print:block mt-8 pt-6 border-t border-slate-200 w-full page-break-before-always text-slate-800 text-left">
+                  <div className="flex justify-between items-center mb-4">
+                    <div>
+                      <h2 className="text-xl font-extrabold text-blue-900">National Service Network Directory</h2>
+                      <p className="text-[10px] text-slate-500">Comprehensive list of all registered regional service centers across India.</p>
+                    </div>
+                    <div className="text-right text-[10px] text-slate-500">
+                      <div>Total Active Centers: {filteredVendors.length}</div>
+                      <div>States Covered: {availableStates.length}</div>
+                    </div>
+                  </div>
+                  
+                  <table className="w-full text-left border-collapse text-xs border border-slate-200">
+                    <thead>
+                      <tr className="border-b-2 border-slate-300 bg-slate-50 text-slate-700 font-bold">
+                        <th className="py-2 px-3 border border-slate-200">Code</th>
+                        <th className="py-2 px-3 border border-slate-200">Company Name</th>
+                        <th className="py-2 px-3 border border-slate-200">Location</th>
+                        <th className="py-2 px-3 border border-slate-200">State</th>
+                        <th className="py-2 px-3 border border-slate-200">Contact Person</th>
+                        <th className="py-2 px-3 border border-slate-200">Contact Number</th>
+                        <th className="py-2 px-3 border border-slate-200">Districts Covered</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredVendors.map((vendor) => (
+                        <tr key={vendor.id} className="border-b border-slate-200">
+                          <td className="py-2 px-3 font-mono font-bold text-blue-700 border border-slate-200">{vendor.vendorCode}</td>
+                          <td className="py-2 px-3 font-bold border border-slate-200">{vendor.companyName}</td>
+                          <td className="py-2 px-3 border border-slate-200">{vendor.city || "N/A"}</td>
+                          <td className="py-2 px-3 font-semibold text-slate-700 border border-slate-200">{vendor.state || "N/A"}</td>
+                          <td className="py-2 px-3 border border-slate-200">{vendor.ownerName || "N/A"}</td>
+                          <td className="py-2 px-3 border border-slate-200">{vendor.contactNumber || "N/A"}</td>
+                          <td className="py-2 px-3 border border-slate-200 text-[10px] text-slate-600 max-w-[200px] truncate" title={vendor.districtsCovered || "None"}>
+                            {vendor.districtsCovered || "None"}
+                          </td>
+                        </tr>
+                      ))}
+                      {filteredVendors.length === 0 && (
+                        <tr>
+                          <td className="py-4 px-3 text-center text-slate-400 italic" colSpan={7}>
+                            No service centers currently registered in the database.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
 
         {/* Right Section: Details Panel & Interactive Command Board */}
-        <div className="lg:col-span-5 flex flex-col gap-6">
+        <div className="lg:col-span-5 flex flex-col gap-6 no-print">
           
           {/* Quick Statistics Cards */}
           <div className="grid grid-cols-2 gap-4">
@@ -701,7 +1161,7 @@ export function MapClient() {
               </CardTitle>
               <CardDescription className="text-xs">
                 {selectedState === "ALL INDIA" 
-                  ? "Click on any highlighted state on the map to isolate it and view district boundaries." 
+                  ? "Click on any state on the map to zoom in and show local political district boundaries." 
                   : "View active vendor coverages, inspect districts, or isolate coverage."
                 }
               </CardDescription>
@@ -710,8 +1170,13 @@ export function MapClient() {
               
               {/* List of Registered Service Centers */}
               <div className="space-y-2">
-                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                  Active Service Centers {selectedState !== "ALL INDIA" ? `in ${selectedState}` : "(National)"}
+                <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex justify-between items-center">
+                  <span>Service Centers {selectedState !== "ALL INDIA" ? `in ${selectedState}` : "(National)"}</span>
+                  {activeVendorFilter && (
+                    <button onClick={() => setActiveVendorFilter(null)} className="text-[10px] text-primary underline">
+                      Clear Filter
+                    </button>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2 max-h-[120px] overflow-y-auto pr-1">
                   {filteredVendors.map((vendor) => {
@@ -753,7 +1218,7 @@ export function MapClient() {
 
               <Separator />
 
-              {/* State Isolation Details (Only shows when a state is selected) */}
+              {/* State Isolation Details */}
               {selectedState !== "ALL INDIA" ? (
                 <div className="space-y-4 flex-1 flex flex-col">
                   
@@ -806,7 +1271,7 @@ export function MapClient() {
                   ) : (
                     <div className="bg-slate-50/50 p-4 border border-slate-200/50 rounded-2xl text-center py-6 text-xs text-slate-500">
                       <Layers className="h-6 w-6 mx-auto mb-2 text-slate-300" />
-                      Click on any district boundary shape on the live map to inspect active service centers!
+                      Click on any district shape on the political map above to inspect covering service centers!
                     </div>
                   )}
 
@@ -866,13 +1331,13 @@ export function MapClient() {
                           >
                             <span className="font-bold truncate max-w-[110px]">{district}</span>
                             {isCovered ? (
-                              <div className="flex items-center gap-1 animate-pulse">
+                              <div className="flex items-center gap-1">
                                 {covering.map((c, i) => (
-                                  <span key={i} style={{ backgroundColor: c.color }} className="w-2 h-2 rounded-full" />
+                                  <span key={i} style={{ backgroundColor: c.color }} className="w-2 h-2 rounded-full animate-pulse" />
                                 ))}
                               </div>
                             ) : (
-                              <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-ping" />
+                              <span className="w-1.5 h-1.5 bg-red-400 rounded-full" />
                             )}
                           </div>
                         );
