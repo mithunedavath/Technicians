@@ -54,6 +54,40 @@ const PHYSICAL_DISTRICTS: Record<string, string[]> = {
   ]
 };
 
+const INDIAN_STATES = [
+  "Andhra Pradesh",
+  "Arunachal Pradesh",
+  "Assam",
+  "Bihar",
+  "Chhattisgarh",
+  "Delhi",
+  "Goa",
+  "Gujarat",
+  "Haryana",
+  "Himachal Pradesh",
+  "Jammu & Kashmir",
+  "Jharkhand",
+  "Karnataka",
+  "Kerala",
+  "Ladakh",
+  "Madhya Pradesh",
+  "Maharashtra",
+  "Manipur",
+  "Meghalaya",
+  "Mizoram",
+  "Nagaland",
+  "Odisha",
+  "Punjab",
+  "Rajasthan",
+  "Sikkim",
+  "Tamil Nadu",
+  "Telangana",
+  "Tripura",
+  "Uttar Pradesh",
+  "Uttarakhand",
+  "West Bengal"
+];
+
 function DistrictPicker({ 
   stateName, 
   value, 
@@ -337,7 +371,20 @@ export default function NewVendorPage() {
             <div className="space-y-2"><Label>Father's Name</Label><Input value={formData.ownersFatherName} onChange={(e) => handleChange("ownersFatherName", e.target.value)} /></div>
             <div className="space-y-2"><Label>Contact Number</Label><Input value={formData.contactNumber} onChange={(e) => handleChange("contactNumber", e.target.value)} /></div>
             <div className="space-y-2"><Label>Email</Label><Input type="email" value={formData.email} onChange={(e) => handleChange("email", e.target.value)} /></div>
-            <div className="space-y-2"><Label>State</Label><Input value={formData.state} onChange={(e) => handleChange("state", e.target.value)} /></div>
+            <div className="space-y-2">
+              <Label>State</Label>
+              <Select value={formData.state} onValueChange={(v) => {
+                handleChange("state", v);
+                handleChange("districtsCovered", "");
+              }}>
+                <SelectTrigger className="bg-white"><SelectValue placeholder="Select State" /></SelectTrigger>
+                <SelectContent className="bg-white max-h-[250px] overflow-y-auto">
+                  {INDIAN_STATES.map(state => (
+                    <SelectItem key={state} value={state}>{state}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="space-y-2"><Label>City</Label><Input value={formData.city} onChange={(e) => handleChange("city", e.target.value)} /></div>
           </CardContent>
         </Card>
