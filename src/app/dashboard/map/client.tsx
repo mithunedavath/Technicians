@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Map, MapPin, Building2, User, Phone, CheckCircle2, AlertTriangle, RefreshCw, Layers, ShieldCheck, MapPinned, ToggleLeft, Globe, Eye, PhoneCall, Mail, DollarSign } from "lucide-react";
+import { Map, MapPin, Building2, User, Phone, CheckCircle2, AlertTriangle, RefreshCw, Layers, ShieldCheck, MapPinned, Globe, Eye, PhoneCall, Mail, DollarSign } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useToast } from "@/hooks/use-toast";
 
@@ -41,7 +41,7 @@ const CITY_COORDINATES: Record<string, { lat: number; lng: number }> = {
   "AHMEDABAD": { lat: 23.0225, lng: 72.5714 }
 };
 
-// Map Centers
+// Map center parameters
 const STATE_CENTERS: Record<string, { lat: number; lng: number; zoom: number }> = {
   "ALL INDIA": { lat: 22.9734, lng: 78.6569, zoom: 5 },
   "DELHI": { lat: 28.6139, lng: 77.2090, zoom: 10 },
@@ -50,7 +50,7 @@ const STATE_CENTERS: Record<string, { lat: number; lng: number; zoom: number }> 
   "MAHARASHTRA": { lat: 19.7515, lng: 75.7139, zoom: 7 }
 };
 
-// District mapping presets for rendering and validation
+// District presets
 const STATE_DISTRICTS_PRESETS: Record<string, string[]> = {
   "DELHI": [
     "Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", 
@@ -66,7 +66,7 @@ const STATE_DISTRICTS_PRESETS: Record<string, string[]> = {
   ]
 };
 
-// SVG definitions for India outline map
+// All India SVG boundaries coordinates
 const SVG_INDIA_PATHS = [
   { id: "JK", name: "Jammu & Kashmir", d: "M 230,80 L 260,60 L 290,70 L 305,100 L 280,130 L 230,120 Z" },
   { id: "LA", name: "Ladakh", d: "M 290,70 L 330,40 L 380,60 L 360,110 L 305,100 Z" },
@@ -155,27 +155,77 @@ const UP_DISTRICTS_SVG = [
   { id: "VARANASI", name: "Varanasi", d: "M 440,380 L 490,390 L 480,440 L 430,430 Z" }
 ];
 
+// Parser function to extract numbers from any SVG path string and return coordinate pairs
+function parseSvgPathToPoints(pathD: string): [number, number][] {
+  const matches = pathD.match(/[-+]?[0-9]*\.?[0-9]+/g);
+  if (!matches) return [];
+  const points: [number, number][] = [];
+  for (let i = 0; i < matches.length; i += 2) {
+    if (matches[i] !== undefined && matches[i+1] !== undefined) {
+      points.push([parseFloat(matches[i]), parseFloat(matches[i+1])]);
+    }
+  }
+  return points;
+}
+
+// Projection algorithm to convert SVG vector coordinates into real Geographical Lat/Lng coordinates
+function projectSvgPointsToLatLng(points: [number, number][], stateName: string): [number, number][] {
+  if (stateName === "ALL INDIA") {
+    // Center point of India SVG is roughly (380, 480), Lat/Lng is centered around (22.97, 78.65)
+    return points.map(([x, y]) => {
+      const lat = 36.5 - (y - 40) * 0.041;
+      const lng = 67.5 + (x - 20) * 0.0385;
+      return [lat, lng];
+    });
+  }
+  if (stateName === "HARYANA") {
+    // Scale and translate Haryana districts centered at (29.0588, 76.0856)
+    return points.map(([x, y]) => {
+      const lat = 30.6 - (y - 10) * 0.0092;
+      const lng = 74.05 + (x - 30) * 0.0105;
+      return [lat, lng];
+    });
+  }
+  if (stateName === "DELHI") {
+    // Delhi districts coordinate mapping
+    return points.map(([x, y]) => {
+      const lat = 28.89 - (y - 50) * 0.00125;
+      const lng = 76.82 + (x - 40) * 0.00148;
+      return [lat, lng];
+    });
+  }
+  if (stateName === "UTTAR PRADESH") {
+    // UP districts coordinate mapping
+    return points.map(([x, y]) => {
+      const lat = 29.7 - (y - 10) * 0.009;
+      const lng = 76.8 + (x - 90) * 0.0102;
+      return [lat, lng];
+    });
+  }
+  return points.map(([x, y]) => [y, x]); // default fallback
+}
+
 export function MapClient() {
   const { user, isUserLoading } = useUser();
   const db = useFirestore();
   const router = useRouter();
   const { toast } = useToast();
 
+  const [selectedState, setSelectedState] = useState<string>("ALL INDIA");
+  const [activeVendorFilter, setActiveVendorFilter] = useState<string | null>(null);
+  const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
+  
+  // Base layer toggle: "street" (Standard map) or "satellite" (Satellite Hybrid with labels)
+  const [leafletBaseLayer, setLeafletBaseLayer] = useState<"street" | "satellite">("satellite");
+  
   const [mounted, setMounted] = useState(false);
   useEffect(() => {
     setMounted(true);
   }, []);
 
-  const [selectedState, setSelectedState] = useState<string>("ALL INDIA");
-  const [activeVendorFilter, setActiveVendorFilter] = useState<string | null>(null);
-  const [selectedDistrict, setSelectedDistrict] = useState<string | null>(null);
-  
-  // Tab control: "political" (SVG political map) or "hybrid" (Geographical satellite Leaflet map)
-  const [mapTab, setMapTab] = useState<"political" | "hybrid">("political");
-  const [leafletBaseLayer, setLeafletBaseLayer] = useState<"street" | "satellite">("street");
-  
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const leafletMapInstanceRef = useRef<any>(null);
+  const leafletPolygonsGroupRef = useRef<any>(null);
   const leafletMarkersGroupRef = useRef<any>(null);
 
   useEffect(() => {
@@ -206,7 +256,6 @@ export function MapClient() {
     if (filteredVendors.length === 0) return colors;
 
     filteredVendors.forEach((vendor, index) => {
-      // Space hues evenly in HSL wheel
       const hue = (index * (360 / filteredVendors.length)) % 360;
       colors[vendor.id] = {
         base: `hsl(${hue}, 85%, 45%)`,
@@ -263,7 +312,7 @@ export function MapClient() {
     return { coverage, allDistricts };
   }, [selectedState, filteredVendors, vendorColors]);
 
-  // Calculate density of vendors per state for All-India state paths
+  // Calculate density of vendors per state for All-India density colors
   const stateVendorCounts = useMemo(() => {
     const counts: Record<string, number> = {};
     if (!vendors) return counts;
@@ -289,51 +338,33 @@ export function MapClient() {
     };
   }, [districtCoverage]);
 
-  const handleStatePathClick = (stateName: string) => {
-    const upper = stateName.toUpperCase();
-    if (availableStates.includes(upper)) {
-      setSelectedState(upper);
-      setActiveVendorFilter(null);
-      setSelectedDistrict(null);
-      toast({
-        title: `Showing ${stateName}`,
-        description: `Switched view to isolated state political map of ${stateName}.`,
-      });
-    } else {
-      toast({
-        variant: "destructive",
-        title: "No Coverage",
-        description: `No registered service centers in ${stateName}.`,
-      });
+  // Get active boundaries dataset based on state selection (All India outline vs State detailed districts)
+  const activeBoundaryDataset = useMemo(() => {
+    if (selectedState === "ALL INDIA") {
+      return SVG_INDIA_PATHS;
     }
-  };
-
-  // Get SVG paths for the active state
-  const activeStateSVG = useMemo(() => {
     if (selectedState === "HARYANA") return HARYANA_DISTRICTS_SVG;
     if (selectedState === "DELHI") return DELHI_DISTRICTS_SVG;
     if (selectedState === "UTTAR PRADESH") return UP_DISTRICTS_SVG;
     return null;
   }, [selectedState]);
 
-  // Detail card info for the selected district
+  // Selected district details
   const selectedDistrictVendors = useMemo(() => {
     if (!selectedDistrict || !districtCoverage.coverage[selectedDistrict]) return [];
     const vendorsList = districtCoverage.coverage[selectedDistrict];
     return filteredVendors.filter(v => vendorsList.some(vl => vl.vendorId === v.id));
   }, [selectedDistrict, districtCoverage, filteredVendors]);
 
-  // Initialize and update the Leaflet Hybrid/Satellite Map
+  // Ref value helper to allow Leaflet event handlers to access active values without re-triggering effect
+  const refsHelper = useRef({ setSelectedState, setSelectedDistrict, selectedDistrict });
   useEffect(() => {
-    if (mapTab !== "hybrid" || typeof window === "undefined" || !mapContainerRef.current) {
-      // Cleanup leaflet if navigating away from hybrid tab
-      if (leafletMapInstanceRef.current) {
-        leafletMapInstanceRef.current.remove();
-        leafletMapInstanceRef.current = null;
-        leafletMarkersGroupRef.current = null;
-      }
-      return;
-    }
+    refsHelper.current = { setSelectedState, setSelectedDistrict, selectedDistrict };
+  }, [setSelectedState, setSelectedDistrict, selectedDistrict]);
+
+  // Dynamic Leaflet Geographic overlay initialization
+  useEffect(() => {
+    if (typeof window === "undefined" || !mapContainerRef.current) return;
 
     const L = require("leaflet");
 
@@ -346,21 +377,19 @@ export function MapClient() {
       document.head.appendChild(link);
     }
 
-    const centerConfig = STATE_CENTERS[selectedState] || STATE_CENTERS["ALL INDIA"];
-    
-    // Create Map if not exists
+    // Instantiation
     if (!leafletMapInstanceRef.current) {
       leafletMapInstanceRef.current = L.map(mapContainerRef.current, {
         zoomControl: true,
         attributionControl: false
       });
+      leafletPolygonsGroupRef.current = L.featureGroup().addTo(leafletMapInstanceRef.current);
+      leafletMarkersGroupRef.current = L.featureGroup().addTo(leafletMapInstanceRef.current);
     }
 
     const map = leafletMapInstanceRef.current;
-    map.setView([centerConfig.lat, centerConfig.lng], centerConfig.zoom);
 
-    // Set Map Layer (OSM vs Satellite Hybrid)
-    // Remove existing tile layers
+    // Base tiles render (OSM streets vs Satellite Hybrid)
     map.eachLayer((layer: any) => {
       if (layer instanceof L.TileLayer) map.removeLayer(layer);
     });
@@ -370,64 +399,177 @@ export function MapClient() {
         maxZoom: 19
       }).addTo(map);
     } else {
-      // Esri World Imagery Satellite Tiles
+      // High-resolution satellite tiles
       L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
         maxZoom: 18
       }).addTo(map);
       
-      // Inject semi-transparent street labels on top
+      // Inject cities/streets labels overlay directly on top of satellite
       L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png", {
         maxZoom: 20
       }).addTo(map);
     }
 
-    // Re-create markers group
-    if (leafletMarkersGroupRef.current) {
-      map.removeLayer(leafletMarkersGroupRef.current);
-    }
-    leafletMarkersGroupRef.current = L.featureGroup().addTo(map);
+    // Clear previous geometries
+    leafletPolygonsGroupRef.current.clearLayers();
+    leafletMarkersGroupRef.current.clearLayers();
 
-    // Render markers and transparent coverage zones
+    // 1. Draw boundary polygons (State or District outlines) directly on the Satellite Map
+    if (activeBoundaryDataset) {
+      activeBoundaryDataset.forEach(boundary => {
+        const svgPoints = parseSvgPathToPoints(boundary.d);
+        const geoPoints = projectSvgPointsToLatLng(svgPoints, selectedState);
+        
+        if (geoPoints.length === 0) return;
+
+        const nameKey = boundary.name.toUpperCase();
+        const isSelected = refsHelper.current.selectedDistrict === nameKey;
+
+        // Styling calculations
+        let fillColor = "#64748b"; // neutral grey default
+        let isCovered = false;
+        let strokeColor = "#334155";
+        let titleContent = "";
+
+        if (selectedState === "ALL INDIA") {
+          const density = stateVendorCounts[nameKey] || 0;
+          isCovered = density > 0;
+          if (isCovered) {
+            if (density === 1) fillColor = "#10b981"; // emerald-500
+            else if (density <= 3) fillColor = "#059669"; // emerald-600
+            else fillColor = "#047857"; // emerald-700
+          }
+          strokeColor = "#ffffff";
+          titleContent = `${boundary.name} (${density} Active Service Center${density > 1 ? 's' : ''})`;
+        } else {
+          // State level - district boundaries
+          const coveringVendors = districtCoverage.coverage[nameKey] || [];
+          isCovered = coveringVendors.length > 0;
+          
+          if (isCovered) {
+            const firstVendor = coveringVendors[0];
+            fillColor = vendorColors[firstVendor.vendorId]?.base || "#3b82f6";
+            strokeColor = vendorColors[firstVendor.vendorId]?.base || "#2563eb";
+          } else {
+            fillColor = "#94a3b8"; // unserved district gray fill
+            strokeColor = "#cbd5e1";
+          }
+          titleContent = `${boundary.name} ${isCovered ? `(Covered by: ${coveringVendors.map(v => v.code).join(", ")})` : "(Unserved Territory)"}`;
+        }
+
+        if (isSelected) {
+          strokeColor = "#2563eb";
+        }
+
+        const polygon = L.polygon(geoPoints, {
+          color: strokeColor,
+          weight: isSelected ? 3 : 1.2,
+          fillColor: fillColor,
+          fillOpacity: isCovered ? 0.22 : 0.06, // Translucent to keep satellite roads/building structures underneath perfectly visible
+          className: "interactive-map-polygon"
+        });
+
+        // Hover events
+        polygon.on("mouseover", function (e: any) {
+          const layer = e.target;
+          layer.setStyle({
+            fillOpacity: isCovered ? 0.35 : 0.15,
+            weight: isSelected ? 3.5 : 2.0
+          });
+        });
+
+        polygon.on("mouseout", function (e: any) {
+          const layer = e.target;
+          layer.setStyle({
+            fillOpacity: isCovered ? 0.22 : 0.06,
+            weight: isSelected ? 3 : 1.2
+          });
+        });
+
+        // Click events
+        polygon.on("click", function () {
+          if (selectedState === "ALL INDIA") {
+            // switch to isolated state
+            refsHelper.current.setSelectedState(nameKey);
+            refsHelper.current.setSelectedDistrict(null);
+            toast({
+              title: `Isolated State view: ${boundary.name}`,
+              description: `Zoomed with boundaries and districts. Showing only local service centers.`,
+            });
+          } else {
+            // select district
+            const alreadySelected = refsHelper.current.selectedDistrict === nameKey;
+            refsHelper.current.setSelectedDistrict(alreadySelected ? null : nameKey);
+          }
+        });
+
+        // Bind simple tooltip showing name
+        polygon.bindTooltip(titleContent, { sticky: true, className: "text-xs font-bold font-sans" });
+
+        leafletPolygonsGroupRef.current.addLayer(polygon);
+      });
+    }
+
+    // 2. Plot active vendor pins & coverage circles
     filteredVendors.forEach(vendor => {
       const cityKey = (vendor.city || "").toUpperCase().trim();
-      const coords = CITY_COORDINATES[cityKey] || CITY_COORDINATES["DELHI"]; // Fallback to Delhi if not found in lookup
-      
+      const coords = CITY_COORDINATES[cityKey] || CITY_COORDINATES["DELHI"];
+
       if (!coords) return;
-      
+
       const colorSet = vendorColors[vendor.id] || { base: "#3b82f6", glow: "rgba(59, 130, 246, 0.3)" };
-      
+      const isFiltered = activeVendorFilter ? activeVendorFilter === vendor.id : true;
+
+      if (!isFiltered) return;
+
+      // Custom pulsing pin icon
       const customMarkerIcon = L.divIcon({
         className: "custom-leaflet-marker",
-        html: `<div style="background-color: ${colorSet.base}; border: 2px solid white; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 8px rgba(0,0,0,0.5);" class="animate-bounce"></div>`,
+        html: `<div style="background-color: ${colorSet.base}; border: 2px solid white; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 10px rgba(0,0,0,0.5);" class="animate-bounce"></div>`,
         iconSize: [14, 14],
         iconAnchor: [7, 7]
       });
 
       const marker = L.marker([coords.lat, coords.lng], { icon: customMarkerIcon });
       
-      // Popover popup
       marker.bindPopup(`
-        <div class="p-2 space-y-1 text-slate-800 text-xs">
-          <strong style="color: ${colorSet.base}">${vendor.companyName}</strong><br/>
-          <strong>Code:</strong> ${vendor.vendorCode}<br/>
-          <strong>Covered:</strong> ${vendor.districtsCovered || 'City center'}<br/>
-          <strong>Contact:</strong> ${vendor.contactNumber || 'N/A'}
+        <div class="p-2 space-y-1 text-slate-800 text-xs font-sans">
+          <strong style="color: ${colorSet.base}; font-size: 13px;">${vendor.companyName}</strong><br/>
+          <strong>Vendor Code:</strong> ${vendor.vendorCode}<br/>
+          <strong>Districts:</strong> ${vendor.districtsCovered || 'City center'}<br/>
+          <strong>State:</strong> ${vendor.state || 'N/A'}<br/>
+          <strong>Owner:</strong> ${vendor.ownerName || 'N/A'}<br/>
+          <strong>Phone:</strong> ${vendor.contactNumber || 'N/A'}
         </div>
       `);
 
-      // Coverage Zone Circle overlay
+      // 35km transparent coverage circle zone
       const circle = L.circle([coords.lat, coords.lng], {
         color: colorSet.base,
         fillColor: colorSet.base,
-        fillOpacity: 0.18,
-        radius: 35000 // 35km radius
+        fillOpacity: 0.15,
+        radius: 35000 
       });
 
       leafletMarkersGroupRef.current.addLayer(marker);
       leafletMarkersGroupRef.current.addLayer(circle);
     });
 
-  }, [mapTab, selectedState, filteredVendors, vendorColors, leafletBaseLayer]);
+    // 3. Zoom / Fit Map bounds precisely to show ONLY the selected state
+    if (selectedState === "ALL INDIA") {
+      map.setView([STATE_CENTERS["ALL INDIA"].lat, STATE_CENTERS["ALL INDIA"].lng], STATE_CENTERS["ALL INDIA"].zoom);
+    } else {
+      // Zoom map to fit the state's district polygons boundary box
+      const bounds = leafletPolygonsGroupRef.current.getBounds();
+      if (bounds.isValid()) {
+        map.fitBounds(bounds, { padding: [30, 30] });
+      } else {
+        const fallback = STATE_CENTERS[selectedState] || STATE_CENTERS["DELHI"];
+        map.setView([fallback.lat, fallback.lng], fallback.zoom);
+      }
+    }
+
+  }, [selectedState, activeBoundaryDataset, filteredVendors, vendorColors, leafletBaseLayer, activeVendorFilter, stateVendorCounts, districtCoverage, selectedDistrict]);
 
   if (!mounted || isUserLoading || !user) {
     return (
@@ -465,219 +607,67 @@ export function MapClient() {
             </SelectContent>
           </Select>
 
-          {/* Toggle Map Mode */}
+          {/* Satellite / Street Map Toggle */}
           <div className="flex rounded-lg border bg-slate-100 p-0.5 shadow-sm text-xs font-bold">
             <button 
-              onClick={() => setMapTab("political")}
+              onClick={() => setLeafletBaseLayer("street")}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-md transition-all ${
-                mapTab === "political" 
+                leafletBaseLayer === "street" 
                   ? "bg-white text-primary shadow" 
                   : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              <Building2 className="h-3.5 w-3.5" /> Political Map
+              Streets
             </button>
             <button 
-              disabled={isVendorsLoading}
-              onClick={() => setMapTab("hybrid")}
+              onClick={() => setLeafletBaseLayer("satellite")}
               className={`flex items-center gap-1 px-3 py-1.5 rounded-md transition-all ${
-                mapTab === "hybrid" 
+                leafletBaseLayer === "satellite" 
                   ? "bg-white text-primary shadow" 
-                  : "text-slate-500 hover:text-slate-800 disabled:opacity-50"
+                  : "text-slate-500 hover:text-slate-800"
               }`}
             >
-              <Globe className="h-3.5 w-3.5" /> Satellite Hybrid
+              Satellite Hybrid
             </button>
           </div>
         </div>
       </div>
 
-      {/* Main Map Grid */}
+      {/* Main Map Dashboard Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         
-        {/* Left Section: Isolated Political or Satellite Map */}
-        <Card className="lg:col-span-7 shadow-lg border-primary/10 bg-white/80 backdrop-blur-sm overflow-hidden flex flex-col min-h-[500px]">
-          <CardHeader className="bg-primary/5 border-b pb-4 flex flex-row items-center justify-between">
-            <div>
-              <CardTitle className="text-lg flex items-center gap-2 text-primary">
-                {mapTab === "political" ? (
-                  <>
-                    <Layers className="h-5 w-5 animate-pulse" />
-                    {selectedState === "ALL INDIA" ? "All-India Political Boundary Map" : `${selectedState} Isolated Political Map`}
-                  </>
-                ) : (
-                  <>
-                    <Globe className="h-5 w-5 text-emerald-600 animate-spin-slow" />
-                    {selectedState === "ALL INDIA" ? "All-India Geographical Overlay" : `${selectedState} Geographical Hybrid Map`}
-                  </>
-                )}
-              </CardTitle>
-              <CardDescription className="text-xs">
-                {mapTab === "political" 
-                  ? "Districts are color-coded dynamically. Hover over boundaries for details." 
-                  : "Live interactive coordinate mapping with service coverage zones."
-                }
-              </CardDescription>
-            </div>
-            
-            {/* Satellite Base Layer Toggle */}
-            {mapTab === "hybrid" && (
-              <div className="flex border rounded-lg overflow-hidden text-[10px] font-bold bg-white">
-                <button 
-                  onClick={() => setLeafletBaseLayer("street")} 
-                  className={`px-2.5 py-1 ${leafletBaseLayer === "street" ? "bg-slate-200 text-slate-800" : "text-slate-400 hover:bg-slate-50"}`}
-                >
-                  Streets
-                </button>
-                <button 
-                  onClick={() => setLeafletBaseLayer("satellite")} 
-                  className={`px-2.5 py-1 ${leafletBaseLayer === "satellite" ? "bg-slate-200 text-slate-800" : "text-slate-400 hover:bg-slate-50"}`}
-                >
-                  Satellite
-                </button>
-              </div>
-            )}
+        {/* Left Section: Geographic Map with Boundary Overlays */}
+        <Card className="lg:col-span-7 shadow-lg border-primary/10 bg-white/80 backdrop-blur-sm overflow-hidden flex flex-col min-h-[580px] relative">
+          <CardHeader className="bg-primary/5 border-b pb-4">
+            <CardTitle className="text-lg flex items-center gap-2 text-primary">
+              <Layers className="h-5 w-5 animate-pulse" />
+              {selectedState === "ALL INDIA" ? "All-India Coverage Command" : `${selectedState} Isolated Boundaries Map`}
+            </CardTitle>
+            <CardDescription className="text-xs">
+              District boundaries are drawn directly on top of the satellite map. Streets, roads, and cities remain fully visible underneath.
+            </CardDescription>
           </CardHeader>
-
-          <CardContent className="flex-1 flex items-center justify-center p-4 relative bg-slate-50/50">
-            {mapTab === "political" ? (
-              selectedState === "ALL INDIA" ? (
-                // MODE: ALL INDIA - Show only India outline map
-                <svg 
-                  viewBox="50 0 750 900" 
-                  className="w-full h-full max-h-[580px] drop-shadow-2xl animate-in zoom-in-95 duration-500"
-                >
-                  <g stroke="#ffffff" strokeWidth="1.5" strokeLinejoin="round">
-                    {SVG_INDIA_PATHS.map((path) => {
-                      const density = stateVendorCounts[path.name.toUpperCase()] || 0;
-                      const hasVendors = density > 0;
-                      
-                      let fill = "#f1f5f9"; // Slate-100 default
-                      let strokeColor = "#cbd5e1";
-                      
-                      if (hasVendors) {
-                        if (density === 1) fill = "#d1fae5"; // emerald-100
-                        else if (density <= 3) fill = "#a7f3d0"; // emerald-200
-                        else fill = "#6ee7b7"; // emerald-300
-                      }
-
-                      return (
-                        <path
-                          key={path.id}
-                          d={path.d}
-                          fill={fill}
-                          stroke={strokeColor}
-                          strokeWidth="1.5"
-                          className="transition-all duration-300 cursor-pointer hover:fill-blue-400 hover:stroke-blue-900"
-                          onClick={() => handleStatePathClick(path.name)}
-                        >
-                          <title>
-                            {`${path.name} ${density > 0 ? `(${density} Center${density > 1 ? 's' : ''})` : "(No Active Center)"}`}
-                          </title>
-                        </path>
-                      );
-                    })}
-                  </g>
-                </svg>
-              ) : (
-                // MODE: STATE ISOLATION - Show only that state map
-                activeStateSVG ? (
-                  <div className="w-full h-full max-h-[500px] flex flex-col justify-between items-center animate-in zoom-in-95 duration-500">
-                    <svg 
-                      viewBox="0 0 450 500" 
-                      className="w-full h-full drop-shadow-xl"
-                    >
-                      <g stroke="#ffffff" strokeWidth="1.5" strokeLinejoin="round">
-                        {activeStateSVG.map((district) => {
-                          const coveringVendors = districtCoverage.coverage[district.name.toUpperCase()] || [];
-                          const isCovered = coveringVendors.length > 0;
-                          const isSelected = selectedDistrict === district.name.toUpperCase();
-                          
-                          // Style based on covering vendor
-                          let fill = "#f8fafc"; // Light slate-50
-                          let strokeColor = "#cbd5e1";
-                          let strokeWidth = "1.5";
-                          
-                          if (isCovered) {
-                            const firstVendor = coveringVendors[0];
-                            fill = vendorColors[firstVendor.vendorId]?.bg || "#e0f2fe";
-                            strokeColor = vendorColors[firstVendor.vendorId]?.border || "#0284c7";
-                          }
-                          
-                          if (isSelected) {
-                            strokeColor = "#2563eb"; // Blue outline
-                            strokeWidth = "3.0";
-                          }
-
-                          return (
-                            <path
-                              key={district.id}
-                              d={district.d}
-                              fill={fill}
-                              stroke={strokeColor}
-                              strokeWidth={strokeWidth}
-                              className="transition-all duration-300 cursor-pointer hover:fill-blue-100"
-                              onClick={() => setSelectedDistrict(isSelected ? null : district.name.toUpperCase())}
-                            >
-                              <title>
-                                {`${district.name} ${isCovered ? `(Covered by: ${coveringVendors.map(v => v.code).join(", ")})` : "(Unserved)"}`}
-                              </title>
-                            </path>
-                          );
-                        })}
-                      </g>
-                    </svg>
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center p-24 border-2 border-dashed rounded-3xl border-slate-300 bg-white shadow-inner max-w-md text-center">
-                    <MapPin className="h-10 w-10 text-primary mb-4 animate-bounce" />
-                    <p className="font-extrabold text-slate-800 text-lg">Stylized Boundary Layout</p>
-                    <p className="text-xs text-muted-foreground mt-1 mb-4">
-                      District shapes are pre-packaged for Haryana, Delhi, and Noida/UP. Other states display as interactive territorial matrices.
-                    </p>
-                    <Button variant="outline" size="sm" onClick={() => setMapTab("hybrid")}>
-                      View in Satellite Hybrid Map
-                    </Button>
-                  </div>
-                )
-              )
-            ) : (
-              // Tab: Live Geographic Satellite Map (Leaflet)
-              <div 
-                ref={mapContainerRef} 
-                className="absolute inset-0 z-10 w-full h-full border-b"
-              />
-            )}
-
-            {/* Political Color Density Legend (Only visible on All-India Political Map) */}
-            {mapTab === "political" && selectedState === "ALL INDIA" && (
-              <div className="absolute bottom-4 left-4 bg-white/95 shadow-md border rounded-xl p-3 text-[10px] space-y-1 backdrop-blur-sm z-20">
-                <div className="font-bold text-muted-foreground uppercase text-[9px] mb-1">State Vendor Density</div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3.5 h-3.5 bg-[#6ee7b7] rounded border" />
-                  <span>High Density (4+ Centers)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3.5 h-3.5 bg-[#a7f3d0] rounded border" />
-                  <span>Medium Density (2-3 Centers)</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3.5 h-3.5 bg-[#d1fae5] rounded border" />
-                  <span>Single Service Center</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3.5 h-3.5 bg-[#f1f5f9] rounded border" />
-                  <span className="text-muted-foreground">No Registered Centers</span>
-                </div>
+          
+          <CardContent className="flex-1 p-0 relative min-h-[480px]">
+            {isVendorsLoading && (
+              <div className="absolute inset-0 bg-slate-50/80 z-30 flex flex-col items-center justify-center gap-2">
+                <RefreshCw className="h-8 w-8 animate-spin text-primary" />
+                <p className="text-xs text-muted-foreground">Synchronizing boundaries...</p>
               </div>
             )}
+            
+            {/* The Unified Leaflet Map Container */}
+            <div 
+              ref={mapContainerRef} 
+              className="absolute inset-0 w-full h-full z-10"
+            />
           </CardContent>
         </Card>
 
         {/* Right Section: Details Panel & Interactive Command Board */}
         <div className="lg:col-span-5 flex flex-col gap-6">
           
-          {/* Quick Statistics */}
+          {/* Quick Statistics Cards */}
           <div className="grid grid-cols-2 gap-4">
             <Card className="shadow-md border-primary/5 bg-white">
               <CardContent className="pt-4 pb-3 flex flex-col items-center">
@@ -685,15 +675,14 @@ export function MapClient() {
                 <span className="text-xl font-black text-primary">{filteredVendors.length}</span>
               </CardContent>
             </Card>
-            {selectedState !== "ALL INDIA" && (
+            {selectedState !== "ALL INDIA" ? (
               <Card className="shadow-md border-primary/5 bg-white">
                 <CardContent className="pt-4 pb-3 flex flex-col items-center">
                   <span className="text-[10px] font-bold text-emerald-600 uppercase mb-0.5">Coverage Ratio</span>
                   <span className="text-xl font-black text-emerald-600">{stats.coveragePercent}%</span>
                 </CardContent>
               </Card>
-            )}
-            {selectedState === "ALL INDIA" && (
+            ) : (
               <Card className="shadow-md border-primary/5 bg-white">
                 <CardContent className="pt-4 pb-3 flex flex-col items-center">
                   <span className="text-[10px] font-bold text-emerald-600 uppercase mb-0.5">States Covered</span>
@@ -708,12 +697,12 @@ export function MapClient() {
             <CardHeader className="bg-muted/30 border-b pb-4">
               <CardTitle className="text-lg flex items-center gap-2">
                 <MapPinned className="h-5 w-5 text-primary" /> 
-                {selectedState === "ALL INDIA" ? "All-India Coverage Command" : `${selectedState} Operations`}
+                {selectedState === "ALL INDIA" ? "National Overview" : `${selectedState} Operations`}
               </CardTitle>
               <CardDescription className="text-xs">
                 {selectedState === "ALL INDIA" 
-                  ? "Overview of national service center operations. Select a state to view boundary details." 
-                  : "Dynamic district political matrices and territory coverage controls."
+                  ? "Click on any highlighted state on the map to isolate it and view district boundaries." 
+                  : "View active vendor coverages, inspect districts, or isolate coverage."
                 }
               </CardDescription>
             </CardHeader>
@@ -722,7 +711,7 @@ export function MapClient() {
               {/* List of Registered Service Centers */}
               <div className="space-y-2">
                 <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
-                  Active Vendors {selectedState !== "ALL INDIA" ? `in ${selectedState}` : "(National)"}
+                  Active Service Centers {selectedState !== "ALL INDIA" ? `in ${selectedState}` : "(National)"}
                 </div>
                 <div className="flex flex-wrap gap-2 max-h-[120px] overflow-y-auto pr-1">
                   {filteredVendors.map((vendor) => {
@@ -756,7 +745,7 @@ export function MapClient() {
                   {filteredVendors.length === 0 && (
                     <div className="bg-amber-50 border border-amber-200 text-amber-800 text-xs p-3 rounded-xl w-full flex items-center gap-2">
                       <AlertTriangle className="h-4 w-4 shrink-0" />
-                      <span>No service centers registered. Register them in the Vendors directory.</span>
+                      <span>No active service centers registered in this state.</span>
                     </div>
                   )}
                 </div>
@@ -784,18 +773,18 @@ export function MapClient() {
                         selectedDistrictVendors.map((vendor) => {
                           const colorSet = vendorColors[vendor.id];
                           return (
-                            <div key={vendor.id} className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 space-y-2">
+                            <div key={vendor.id} className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 space-y-2 animate-in fade-in duration-350">
                               <div className="flex justify-between items-center">
                                 <span className="font-bold text-slate-800 text-xs">{vendor.companyName}</span>
                                 <Badge style={{ backgroundColor: colorSet?.base }} className="text-[9px] font-black text-white">
                                   {vendor.vendorCode}
                                 </Badge>
                               </div>
-                              <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground">
-                                <div className="flex items-center gap-1"><User className="h-3 w-3" /> {vendor.ownerName || "No Owner Registered"}</div>
-                                <div className="flex items-center gap-1"><Phone className="h-3 w-3" /> {vendor.contactNumber || "N/A"}</div>
-                                <div className="flex items-center gap-1"><Mail className="h-3 w-3" /> {vendor.email || "N/A"}</div>
-                                <div className="flex items-center gap-1"><DollarSign className="h-3 w-3" /> Rate LC: {vendor.rateLC || "N/A"}</div>
+                              <div className="grid grid-cols-2 gap-2 text-[10px] text-muted-foreground font-sans">
+                                <div className="flex items-center gap-1 truncate"><User className="h-3 w-3 text-primary" /> {vendor.ownerName || "N/A"}</div>
+                                <div className="flex items-center gap-1"><Phone className="h-3 w-3 text-primary" /> {vendor.contactNumber || "N/A"}</div>
+                                <div className="flex items-center gap-1 truncate"><Mail className="h-3 w-3 text-primary" /> {vendor.email || "N/A"}</div>
+                                <div className="flex items-center gap-1"><DollarSign className="h-3 w-3 text-primary" /> Rate LC: {vendor.rateLC || "N/A"}</div>
                               </div>
                               <Button 
                                 size="sm" 
@@ -810,14 +799,14 @@ export function MapClient() {
                         })
                       ) : (
                         <div className="bg-white p-3 rounded-xl shadow-sm border border-slate-100 flex items-center gap-2 text-slate-400 text-xs py-4 justify-center">
-                          <AlertTriangle className="h-4 w-4 text-destructive" /> No registered technician coverage in this district.
+                          <AlertTriangle className="h-4 w-4 text-destructive" /> No active technician coverage in this district.
                         </div>
                       )}
                     </div>
                   ) : (
-                    <div className="bg-slate-50/50 p-4 border border-slate-200/50 rounded-2xl text-center py-6 text-xs text-muted-foreground">
+                    <div className="bg-slate-50/50 p-4 border border-slate-200/50 rounded-2xl text-center py-6 text-xs text-slate-500">
                       <Layers className="h-6 w-6 mx-auto mb-2 text-slate-300" />
-                      Click on a district boundary shape in the political map to inspect active service centers.
+                      Click on any district boundary shape on the live map to inspect active service centers!
                     </div>
                   )}
 
@@ -825,9 +814,12 @@ export function MapClient() {
                   <div className="space-y-2 flex-1 flex flex-col">
                     <div className="text-xs font-bold text-muted-foreground uppercase tracking-wider flex justify-between items-center">
                       <span>Territorial Coverage Matrix</span>
-                      {activeVendorFilter && (
-                        <button onClick={() => setActiveVendorFilter(null)} className="text-[10px] text-primary underline">
-                          Clear Highlight
+                      {(activeVendorFilter || selectedDistrict) && (
+                        <button 
+                          onClick={() => { setActiveVendorFilter(null); setSelectedDistrict(null); }} 
+                          className="text-[10px] text-primary underline"
+                        >
+                          Clear Selection
                         </button>
                       )}
                     </div>
@@ -874,13 +866,13 @@ export function MapClient() {
                           >
                             <span className="font-bold truncate max-w-[110px]">{district}</span>
                             {isCovered ? (
-                              <div className="flex items-center gap-1">
+                              <div className="flex items-center gap-1 animate-pulse">
                                 {covering.map((c, i) => (
                                   <span key={i} style={{ backgroundColor: c.color }} className="w-2 h-2 rounded-full" />
                                 ))}
                               </div>
                             ) : (
-                              <span className="w-1.5 h-1.5 bg-red-400 rounded-full" />
+                              <span className="w-1.5 h-1.5 bg-red-400 rounded-full animate-ping" />
                             )}
                           </div>
                         );
@@ -914,7 +906,7 @@ export function MapClient() {
                               {count} Service Center{count > 1 ? 's' : ''}
                             </Badge>
                             <span className="text-[9px] text-blue-600 font-bold opacity-0 group-hover:opacity-100 transition-opacity">
-                              View Map &rarr;
+                              Zoom In &rarr;
                             </span>
                           </div>
                         </div>
