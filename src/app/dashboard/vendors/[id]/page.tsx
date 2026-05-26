@@ -17,16 +17,184 @@ import {
   Building2, 
   User, 
   MapPin, 
-  CreditCard, 
-  ShieldCheck,
-  BadgeCent,
-  Loader2,
-  CheckCircle2,
-  Trash2,
-  ChevronLeft,
-  Briefcase,
-  Link as LinkIcon
+  Link as LinkIcon,
+  Check,
+  X,
+  Search,
+  Layers
 } from "lucide-react";
+
+import { Badge } from "@/components/ui/badge";
+
+const PHYSICAL_DISTRICTS: Record<string, string[]> = {
+  "DELHI": [
+    "Central Delhi", "East Delhi", "New Delhi", "North Delhi", "North East Delhi", 
+    "North West Delhi", "Shahdara", "South Delhi", "South East Delhi", "South West Delhi", "West Delhi"
+  ],
+  "HARYANA": [
+    "Gurugram", "Faridabad", "Rohtak", "Sonipat", "Rewari", "Ambala", "Bhiwani", "Charkhi Dadri", 
+    "Fatehabad", "Hisar", "Jhajjar", "Jind", "Kaithal", "Karnal", "Kurukshetra", "Mahendragarh", 
+    "Nuh", "Palwal", "Panchkula", "Panipat", "Sirsa", "Yamunanagar"
+  ],
+  "UTTAR PRADESH": [
+    "Noida", "Ghaziabad", "Lucknow", "Kanpur", "Agra", "Varanasi", "Meerut", "Bulandshahr", "Hapur", "Muzaffarnagar"
+  ],
+  "MAHARASHTRA": [
+    "Ahmednagar", "Akola", "Amravati", "Aurangabad", "Beed", "Bhandara", "Buldhana", "Chandrapur", 
+    "Dhule", "Gadchiroli", "Gondia", "Hingoli", "Jalgaon", "Jalna", "Kolhapur", "Latur", 
+    "Mumbai City", "Mumbai Suburban", "Nagpur", "Nanded", "Nandurbar", "Nashik", "Osmanabad", 
+    "Palghar", "Parbhani", "Pune", "Raigad", "Ratnagiri", "Sangli", "Satara", "Sindhudurg", 
+    "Solapur", "Thane", "Wardha", "Washim", "Yavatmal"
+  ]
+};
+
+function DistrictPicker({ 
+  stateName, 
+  value, 
+  onChange 
+}: { 
+  stateName: string; 
+  value: string; 
+  onChange: (val: string) => void;
+}) {
+  const [searchQuery, setSearchQuery] = useState("");
+  
+  const stateKey = (stateName || "").trim().toUpperCase();
+  const availableDistricts = PHYSICAL_DISTRICTS[stateKey] || [];
+  
+  const selectedDistricts = useMemo(() => {
+    return (value || "").split(",")
+      .map(d => d.trim())
+      .filter(Boolean);
+  }, [value]);
+
+  const filteredDistricts = useMemo(() => {
+    if (!searchQuery) return availableDistricts;
+    return availableDistricts.filter(d => 
+      d.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+  }, [availableDistricts, searchQuery]);
+
+  const handleToggleDistrict = (district: string) => {
+    let updated: string[];
+    const existingIndex = selectedDistricts.findIndex(
+      d => d.toLowerCase() === district.toLowerCase()
+    );
+    
+    if (existingIndex > -1) {
+      updated = selectedDistricts.filter((_, idx) => idx !== existingIndex);
+    } else {
+      updated = [...selectedDistricts, district];
+    }
+    
+    onChange(updated.join(", "));
+  };
+
+  const handleClearAll = () => {
+    onChange("");
+  };
+
+  if (availableDistricts.length === 0) {
+    return (
+      <div className="space-y-2">
+        <Input 
+          value={value} 
+          onChange={(e) => onChange(e.target.value)} 
+          placeholder="e.g. Gurugram, Faridabad (Specify comma-separated districts)" 
+        />
+        <p className="text-xs text-muted-foreground">
+          {stateName 
+            ? `Note: No pre-configured physical districts list for "${stateName}". You can manually type comma-separated values.`
+            : "Please type a State name (e.g. Haryana, Delhi, Uttar Pradesh, Maharashtra) in the Owner Info card to unlock the Physical Districts Multi-Select Dropdown!"
+          }
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-3 p-4 border border-primary/10 bg-slate-50/50 rounded-2xl text-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b pb-2">
+        <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+          <Layers className="h-3.5 w-3.5 text-primary" />
+          <span>Select Districts for {stateName.toUpperCase()}</span>
+          <span className="bg-primary/10 text-primary text-[10px] px-2 py-0.5 rounded-full font-black">
+            {selectedDistricts.length} Selected
+          </span>
+        </div>
+        {selectedDistricts.length > 0 && (
+          <button 
+            type="button"
+            onClick={handleClearAll}
+            className="text-[10px] text-destructive hover:underline font-bold"
+          >
+            Clear All
+          </button>
+        )}
+      </div>
+
+      {selectedDistricts.length > 0 && (
+        <div className="flex flex-wrap gap-1.5 p-2 bg-white border border-slate-100 rounded-xl max-h-24 overflow-y-auto shadow-inner">
+          {selectedDistricts.map(district => (
+            <Badge 
+              key={district} 
+              variant="secondary" 
+              className="flex items-center gap-1 text-[10px] font-bold bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200"
+            >
+              {district}
+              <button 
+                type="button"
+                onClick={() => handleToggleDistrict(district)}
+                className="hover:bg-blue-200 rounded-full p-0.5 text-blue-500 hover:text-blue-800 transition-colors"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </Badge>
+          ))}
+        </div>
+      )}
+
+      <div className="relative">
+        <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+        <Input
+          type="text"
+          placeholder={`Search districts in ${stateName}...`}
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-8 text-xs h-8 bg-white border-slate-200"
+        />
+      </div>
+
+      <div className="border border-slate-200 bg-white p-3 rounded-xl max-h-36 overflow-y-auto flex flex-wrap gap-1.5 shadow-inner">
+        {filteredDistricts.map(district => {
+          const isSelected = selectedDistricts.some(
+            d => d.toLowerCase() === district.toLowerCase()
+          );
+          return (
+            <button
+              key={district}
+              type="button"
+              onClick={() => handleToggleDistrict(district)}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold transition-all border ${
+                isSelected 
+                  ? "bg-primary text-white border-primary shadow-sm scale-105" 
+                  : "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:border-slate-300"
+              }`}
+            >
+              {isSelected && <Check className="h-2.5 w-2.5 shrink-0" />}
+              {district}
+            </button>
+          );
+        })}
+        {filteredDistricts.length === 0 && (
+          <div className="text-[10px] text-muted-foreground italic w-full text-center py-4">
+            No districts match your search query.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export default function VendorDetailPage() {
   const { user, isUserLoading } = useUser();
@@ -147,13 +315,12 @@ export default function VendorDetailPage() {
             <div className="space-y-2"><Label>Establishment Address</Label><Textarea value={formData.establishmentAddress} onChange={(e) => handleChange("establishmentAddress", e.target.value)} /></div>
             <div className="space-y-2"><Label>Owner Personal Address</Label><Textarea value={formData.ownerPersonalAddress} onChange={(e) => handleChange("ownerPersonalAddress", e.target.value)} /></div>
             <div className="space-y-2 md:col-span-2">
-              <Label>Districts Covered (Comma-separated)</Label>
-              <Input 
+              <Label>Districts Covered</Label>
+              <DistrictPicker 
+                stateName={formData.state} 
                 value={formData.districtsCovered || ""} 
-                onChange={(e) => handleChange("districtsCovered", e.target.value)} 
-                placeholder="e.g. Gurugram, Faridabad, Rohtak, Sonipat" 
+                onChange={(val) => handleChange("districtsCovered", val)} 
               />
-              <p className="text-xs text-muted-foreground">Specify the district names covered by this vendor. Separate each district with a comma.</p>
             </div>
           </CardContent>
         </Card>
